@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn, signUp, signOut } from "@/lib/auth-client";
+import { TopNav } from "@/components/ui/top-nav";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 export default function HomePage() {
   const router = useRouter();
@@ -127,144 +132,176 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 py-12 text-zinc-900 transition-colors dark:bg-zinc-950 dark:text-zinc-100">
-      <main className="w-full max-w-md space-y-6">
-        {/* Global Notifications */}
-        {errorMessage && (
-          <div
-            role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
-          >
-            <p className="font-semibold">Error</p>
-            <p className="mt-0.5">{errorMessage}</p>
-          </div>
-        )}
+    <div className="flex min-h-screen flex-col bg-canvas text-ink selection:bg-primary/20 selection:text-ink">
+      <TopNav
+        user={session?.user}
+        onSignOut={session?.user ? handleSignOut : undefined}
+        isSigningOut={isSubmitting}
+      />
 
-        {successMessage && (
-          <div
-            role="status"
-            className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
-          >
-            <p className="font-semibold">Success</p>
-            <p className="mt-0.5">{successMessage}</p>
-          </div>
-        )}
-
-        {sessionError && (
-          <div
-            role="alert"
-            className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
-          >
-            <p className="font-semibold">Session Warning</p>
-            <p className="mt-0.5">
-              {sessionError.message || "Failed to retrieve session."}
+      <main className="flex flex-1 flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-lg space-y-8">
+          {/* Editorial Headline */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-2 mb-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="font-sans text-xs uppercase tracking-wider text-muted font-medium">
+                Anthropic Warm-Canvas Editorial
+              </span>
+            </div>
+            <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink">
+              {session?.user
+                ? "Repository Workspace"
+                : "Welcome to Repo Manage"}
+            </h1>
+            <p className="font-sans text-sm text-body mx-auto max-w-sm">
+              {session?.user
+                ? "Manage connected repositories, sync workflows, and review activity logs."
+                : "A considered interface for managing and understanding your repositories."}
             </p>
           </div>
-        )}
 
-        {/* Card Container */}
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          {/* Semantic Notifications */}
+          {errorMessage && (
+            <div
+              role="alert"
+              className="rounded-md border border-error/25 bg-error/10 p-4 text-xs text-error space-y-1"
+            >
+              <p className="font-semibold uppercase tracking-wider">Error</p>
+              <p>{errorMessage}</p>
+            </div>
+          )}
+
+          {successMessage && (
+            <div
+              role="status"
+              className="rounded-md border border-success/25 bg-success/10 p-4 text-xs text-success space-y-1"
+            >
+              <p className="font-semibold uppercase tracking-wider">Success</p>
+              <p>{successMessage}</p>
+            </div>
+          )}
+
+          {sessionError && (
+            <div
+              role="alert"
+              className="rounded-md border border-warning/25 bg-warning/10 p-4 text-xs text-warning space-y-1"
+            >
+              <p className="font-semibold uppercase tracking-wider">
+                Session Notice
+              </p>
+              <p>{sessionError.message || "Failed to retrieve session."}</p>
+            </div>
+          )}
+
+          {/* Main Card Container */}
           {isSessionPending ? (
             /* Loading Skeleton */
-            <div className="p-8 space-y-4 animate-pulse">
-              <div className="h-6 w-1/2 rounded bg-zinc-200 dark:bg-zinc-800 mx-auto" />
-              <div className="h-4 w-3/4 rounded bg-zinc-100 dark:bg-zinc-850 mx-auto" />
+            <Card variant="feature" className="space-y-4 animate-pulse">
+              <div className="h-6 w-1/2 rounded bg-surface-cream-strong mx-auto" />
+              <div className="h-4 w-3/4 rounded bg-surface-soft mx-auto" />
               <div className="space-y-3 pt-4">
-                <div className="h-10 rounded-lg bg-zinc-200 dark:bg-zinc-800" />
-                <div className="h-10 rounded-lg bg-zinc-200 dark:bg-zinc-800" />
-                <div className="h-10 rounded-lg bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-10 rounded-md bg-surface-cream-strong" />
+                <div className="h-10 rounded-md bg-surface-cream-strong" />
+                <div className="h-10 rounded-md bg-surface-cream-strong" />
               </div>
-            </div>
+            </Card>
           ) : session?.user ? (
             /* Logged-In State */
-            <div className="p-6 sm:p-8 space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xl font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-                  {session.user.name
-                    ? session.user.name.charAt(0).toUpperCase()
-                    : session.user.email?.charAt(0).toUpperCase() || "U"}
+            <div className="space-y-6">
+              <Card variant="feature" className="space-y-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-canvas text-lg font-serif font-medium text-ink border border-hairline">
+                      {(
+                        session.user.name?.[0] ||
+                        session.user.email?.[0] ||
+                        "U"
+                      ).toUpperCase()}
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold text-ink">
+                        {session.user.name || "Authenticated User"}
+                      </h2>
+                      <p className="text-xs text-muted">
+                        {session.user.email}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="success">Active Session</Badge>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                    {session.user.name || "Signed-in User"}
-                  </h2>
-                  <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-                    {session.user.email}
-                  </p>
-                </div>
-              </div>
 
-              <div className="rounded-lg border border-zinc-100 bg-zinc-50/60 p-4 text-xs space-y-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500 dark:text-zinc-400">
-                    User ID
-                  </span>
-                  <span className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">
-                    {session.user.id}
-                  </span>
-                </div>
-                {session.session?.id && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      Session ID
-                    </span>
-                    <span className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">
-                      {session.session.id}
+                {/* Session Details */}
+                <div className="rounded-md border border-hairline bg-canvas/80 p-4 text-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">User ID</span>
+                    <span className="font-mono text-ink truncate max-w-[220px]">
+                      {session.user.id}
                     </span>
                   </div>
-                )}
-                {session.session?.expiresAt && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      Expires At
-                    </span>
-                    <span className="text-zinc-700 dark:text-zinc-300">
-                      {new Date(session.session.expiresAt).toLocaleString()}
-                    </span>
-                  </div>
-                )}
-              </div>
+                  {session.session?.id && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted">Session ID</span>
+                      <span className="font-mono text-ink truncate max-w-[220px]">
+                        {session.session.id}
+                      </span>
+                    </div>
+                  )}
+                  {session.session?.expiresAt && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted">Expires At</span>
+                      <span className="text-ink">
+                        {new Date(session.session.expiresAt).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-              {/* Action Buttons */}
-              <div className="space-y-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={isSubmitting}
-                  className="flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isSubmitting ? "Signing out..." : "Sign Out"}
-                </button>
+                {/* Actions */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <Button
+                    variant="primary"
+                    onClick={handleSignOut}
+                    isLoading={isSubmitting}
+                    className="flex-1"
+                  >
+                    Sign Out
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowRawSession(!showRawSession)}
+                    className="flex-1"
+                  >
+                    {showRawSession ? "Hide Raw Data" : "Inspect Session JSON"}
+                  </Button>
+                </div>
+              </Card>
 
-                <button
-                  type="button"
-                  onClick={() => setShowRawSession(!showRawSession)}
-                  className="w-full text-center text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
-                >
-                  {showRawSession
-                    ? "Hide raw session details"
-                    : "View raw session details"}
-                </button>
-              </div>
-
+              {/* Dark Product Surface Chrome: Raw Session JSON */}
               {showRawSession && (
-                <pre className="max-h-56 overflow-auto rounded-lg bg-zinc-950 p-3 text-left font-mono text-xs text-zinc-100 dark:bg-black border border-zinc-800">
-                  {JSON.stringify(session, null, 2)}
-                </pre>
+                <Card
+                  variant="code-window"
+                  title="session.json"
+                  subtitle="Better-Auth session payload"
+                >
+                  <pre className="text-xs leading-relaxed text-on-dark overflow-x-auto">
+                    {JSON.stringify(session, null, 2)}
+                  </pre>
+                </Card>
               )}
             </div>
           ) : (
-            /* Logged-Out State: Tabs for Sign In & Sign Up */
-            <div>
-              {/* Tab Navigation */}
-              <div className="grid grid-cols-2 border-b border-zinc-200 dark:border-zinc-800">
+            /* Logged-Out State: Editorial Tabs for Sign In & Sign Up */
+            <Card variant="feature" className="p-0 overflow-hidden">
+              {/* Sub-nav Category Tabs */}
+              <div className="flex border-b border-hairline bg-surface-soft/60 p-1.5 gap-1.5">
                 <button
                   type="button"
                   onClick={() => switchMode("signin")}
-                  className={`py-3.5 text-center text-sm font-medium transition cursor-pointer ${
+                  className={`flex-1 py-2 text-center text-xs font-medium rounded-md transition-colors cursor-pointer ${
                     mode === "signin"
-                      ? "border-b-2 border-zinc-900 font-semibold text-zinc-900 dark:border-zinc-100 dark:text-zinc-50 bg-zinc-50/50 dark:bg-zinc-800/30"
-                      : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      ? "bg-canvas text-ink font-semibold shadow-xs border border-hairline/80"
+                      : "text-muted hover:text-ink"
                   }`}
                 >
                   Sign In
@@ -272,13 +309,13 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => switchMode("signup")}
-                  className={`py-3.5 text-center text-sm font-medium transition cursor-pointer ${
+                  className={`flex-1 py-2 text-center text-xs font-medium rounded-md transition-colors cursor-pointer ${
                     mode === "signup"
-                      ? "border-b-2 border-zinc-900 font-semibold text-zinc-900 dark:border-zinc-100 dark:text-zinc-50 bg-zinc-50/50 dark:bg-zinc-800/30"
-                      : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      ? "bg-canvas text-ink font-semibold shadow-xs border border-hairline/80"
+                      : "text-muted hover:text-ink"
                   }`}
                 >
-                  Sign Up
+                  Create Account
                 </button>
               </div>
 
@@ -287,58 +324,45 @@ export default function HomePage() {
                 {mode === "signin" ? (
                   /* Sign In Form */
                   <form onSubmit={handleSignIn} className="space-y-4">
-                    <div className="space-y-1 text-left">
-                      <label
-                        htmlFor="signin-email"
-                        className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
+                    <Input
+                      label="Email"
+                      id="signin-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+
+                    <Input
+                      label="Password"
+                      id="signin-password"
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+
+                    <div className="pt-2">
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        isLoading={isSubmitting}
+                        className="w-full"
                       >
-                        Email
-                      </label>
-                      <input
-                        id="signin-email"
-                        type="email"
-                        required
-                        autoComplete="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="block w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-300 dark:focus:ring-zinc-300"
-                      />
+                        Sign In
+                      </Button>
                     </div>
 
-                    <div className="space-y-1 text-left">
-                      <label
-                        htmlFor="signin-password"
-                        className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
-                      >
-                        Password
-                      </label>
-                      <input
-                        id="signin-password"
-                        type="password"
-                        required
-                        autoComplete="current-password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-300 dark:focus:ring-zinc-300"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="mt-2 flex w-full items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    >
-                      {isSubmitting ? "Signing in..." : "Sign In"}
-                    </button>
-
-                    <p className="pt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                    <p className="pt-2 text-center text-xs text-muted">
                       Don&apos;t have an account?{" "}
                       <button
                         type="button"
                         onClick={() => switchMode("signup")}
-                        className="font-semibold text-zinc-900 hover:underline dark:text-zinc-100 cursor-pointer"
+                        className="text-primary hover:text-primary-active underline underline-offset-4 cursor-pointer"
                       >
                         Create one now
                       </button>
@@ -347,77 +371,56 @@ export default function HomePage() {
                 ) : (
                   /* Sign Up Form */
                   <form onSubmit={handleSignUp} className="space-y-4">
-                    <div className="space-y-1 text-left">
-                      <label
-                        htmlFor="signup-name"
-                        className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
+                    <Input
+                      label="Name"
+                      id="signup-name"
+                      type="text"
+                      required
+                      autoComplete="name"
+                      placeholder="John Doe"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+
+                    <Input
+                      label="Email"
+                      id="signup-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+
+                    <Input
+                      label="Password"
+                      id="signup-password"
+                      type="password"
+                      required
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+
+                    <div className="pt-2">
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        isLoading={isSubmitting}
+                        className="w-full"
                       >
-                        Name
-                      </label>
-                      <input
-                        id="signup-name"
-                        type="text"
-                        required
-                        autoComplete="name"
-                        placeholder="John Doe"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="block w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-300 dark:focus:ring-zinc-300"
-                      />
+                        Create Account
+                      </Button>
                     </div>
 
-                    <div className="space-y-1 text-left">
-                      <label
-                        htmlFor="signup-email"
-                        className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
-                      >
-                        Email
-                      </label>
-                      <input
-                        id="signup-email"
-                        type="email"
-                        required
-                        autoComplete="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="block w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-300 dark:focus:ring-zinc-300"
-                      />
-                    </div>
-
-                    <div className="space-y-1 text-left">
-                      <label
-                        htmlFor="signup-password"
-                        className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
-                      >
-                        Password
-                      </label>
-                      <input
-                        id="signup-password"
-                        type="password"
-                        required
-                        autoComplete="new-password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-300 dark:focus:ring-zinc-300"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="mt-2 flex w-full items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    >
-                      {isSubmitting ? "Creating account..." : "Sign Up"}
-                    </button>
-
-                    <p className="pt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                    <p className="pt-2 text-center text-xs text-muted">
                       Already have an account?{" "}
                       <button
                         type="button"
                         onClick={() => switchMode("signin")}
-                        className="font-semibold text-zinc-900 hover:underline dark:text-zinc-100 cursor-pointer"
+                        className="text-primary hover:text-primary-active underline underline-offset-4 cursor-pointer"
                       >
                         Sign in
                       </button>
@@ -425,8 +428,13 @@ export default function HomePage() {
                   </form>
                 )}
               </div>
-            </div>
+            </Card>
           )}
+
+          {/* Footer note */}
+          <p className="text-center text-xs text-muted-soft">
+            Built with Better-Auth &bull; Styled with Warm-Canvas Editorial
+          </p>
         </div>
       </main>
     </div>
