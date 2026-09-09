@@ -1,6 +1,6 @@
 {
-  "name": "s3-split",
-  "version": "0.1.0",
+  "name": "repo-manage",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "dotenvx run -- next dev",
