@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { BackupHistoryDrawer } from "./backup-history-drawer";
 
 export interface RepositoryItem {
   id: string;
@@ -31,6 +32,8 @@ interface RepositoryInventoryTableProps {
     },
   ) => Promise<void>;
   onBackupNow?: (repoId: string) => Promise<void>;
+  onSelectRepository?: (repo: RepositoryItem) => void;
+  selectedRepositoryId?: string | null;
 }
 
 function formatBackupDate(date: string | Date): string {
@@ -53,8 +56,19 @@ export function RepositoryInventoryTable({
   isLoading = false,
   onUpdateRepository,
   onBackupNow,
+  onSelectRepository,
+  selectedRepositoryId,
 }: RepositoryInventoryTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRepoForDrawer, setSelectedRepoForDrawer] = useState<RepositoryItem | null>(null);
+
+  const activeDrawerRepo = useMemo(() => {
+    if (selectedRepositoryId) {
+      return repositories.find((r) => r.id === selectedRepositoryId) || null;
+    }
+    return selectedRepoForDrawer;
+  }, [selectedRepositoryId, repositories, selectedRepoForDrawer]);
+
   const [updatingRepoIds, setUpdatingRepoIds] = useState<Record<string, boolean>>({});
   const [backingUpRepoIds, setBackingUpRepoIds] = useState<Record<string, boolean>>({});
   const [localOverrides, setLocalOverrides] = useState<
@@ -209,6 +223,13 @@ export function RepositoryInventoryTable({
     }
   };
 
+  const handleRowClick = (repo: RepositoryItem) => {
+    setSelectedRepoForDrawer(repo);
+    if (onSelectRepository) {
+      onSelectRepository(repo);
+    }
+  };
+
   return (
     <div
       className="space-y-4 rounded-lg border border-hairline bg-canvas p-6 shadow-xs"
@@ -224,7 +245,7 @@ export function RepositoryInventoryTable({
             <Badge variant="pill">{repositories.length}</Badge>
           </div>
           <p className="font-sans text-xs text-muted mt-0.5">
-            Repositories authorized for read-only backup via GitHub App installation
+            Repositories authorized for read-only backup via GitHub App installation. Click any row to view backup history.
           </p>
         </div>
 
@@ -315,12 +336,13 @@ export function RepositoryInventoryTable({
                 return (
                   <tr
                     key={repo.id}
-                    className={`transition-colors ${
+                    onClick={() => handleRowClick(repo)}
+                    className={`group cursor-pointer transition-colors ${
                       isBackingUp
                         ? "border-l-2 border-l-primary bg-primary/[0.05] animate-pulse"
                         : isEnrolled
-                        ? "border-l-2 border-l-primary bg-primary/[0.02]"
-                        : "hover:bg-surface-soft/30"
+                        ? "border-l-2 border-l-primary bg-primary/[0.02] hover:bg-primary/[0.04]"
+                        : "hover:bg-surface-soft/60"
                     }`}
                     data-testid={`repo-row-${repo.name}`}
                     aria-busy={isBackingUp}
@@ -329,7 +351,7 @@ export function RepositoryInventoryTable({
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <svg
-                          className="h-4 w-4 shrink-0 text-muted"
+                          className="h-4 w-4 shrink-0 text-muted group-hover:text-primary transition-colors"
                           viewBox="0 0 16 16"
                           fill="currentColor"
                           aria-hidden="true"
@@ -342,7 +364,7 @@ export function RepositoryInventoryTable({
                               {orgPrefix} /{" "}
                             </span>
                           )}
-                          <span className="font-sans text-sm font-semibold text-ink">
+                          <span className="font-sans text-sm font-semibold text-ink group-hover:text-primary transition-colors">
                             {repoName}
                           </span>
                         </div>
@@ -440,7 +462,7 @@ export function RepositoryInventoryTable({
 
                     {/* Schedule Selector */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <select
                           value={currentSchedule}
                           onChange={(e) =>
@@ -460,15 +482,40 @@ export function RepositoryInventoryTable({
                       </div>
                     </td>
 
-                    {/* Actions: On-Demand "Backup Now" Button + Toggle Switch */}
+                    {/* Actions: On-Demand "Backup Now" Button + History + Toggle Switch */}
                     <td className="py-3 px-4 text-right">
                       <div className="inline-flex items-center gap-2 justify-end">
+                        {/* Backup History Button */}
+                        <button
+                          type="button"
+                          data-testid={`view-history-btn-${repo.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRowClick(repo);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-canvas border border-hairline px-2 py-1 text-xs font-medium text-muted hover:text-ink hover:bg-surface-soft active:bg-surface-card transition-colors shadow-2xs cursor-pointer"
+                          title="View backup history and restore"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5 text-muted"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm15 0A8 8 0 1 0 0 8a8 8 0 0 0 16 0Zm-8.5-4.25a.75.75 0 0 1 1.5 0v3.5l2.25 1.5a.75.75 0 1 1-.832 1.248l-2.625-1.75A.75.75 0 0 1 7.25 8.5V4.75Z" />
+                          </svg>
+                          <span>History</span>
+                        </button>
+
                         {isEnrolled && (
                           <button
                             type="button"
                             data-testid={`backup-now-btn-${repo.name}`}
                             disabled={isBackingUp || isUpdating}
-                            onClick={() => handleBackupNow(repo)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBackupNow(repo);
+                            }}
                             className="inline-flex items-center gap-1.5 rounded-md bg-canvas border border-hairline px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-soft active:bg-surface-card transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
                             title="Trigger an immediate backup"
                           >
@@ -502,7 +549,10 @@ export function RepositoryInventoryTable({
                           aria-checked={isEnrolled}
                           aria-label={`Enable Backup for ${repo.name}`}
                           disabled={isUpdating || isBackingUp}
-                          onClick={() => handleToggleBackup(repo)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleBackup(repo);
+                          }}
                           className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 disabled:opacity-50 ${
                             isEnrolled
                               ? "bg-primary"
@@ -524,6 +574,24 @@ export function RepositoryInventoryTable({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Backup History Drawer */}
+      {activeDrawerRepo && (
+        <BackupHistoryDrawer
+          isOpen={!!activeDrawerRepo}
+          onClose={() => setSelectedRepoForDrawer(null)}
+          repository={activeDrawerRepo}
+          onTriggerBackup={async (repoId) => {
+            if (onBackupNow) {
+              await onBackupNow(repoId);
+            } else {
+              await fetch(`/api/repositories/${repoId}/backup`, {
+                method: "POST",
+              });
+            }
+          }}
+        />
       )}
     </div>
   );

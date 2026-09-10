@@ -3,9 +3,11 @@ import {
   HeadBucketCommand,
   CreateBucketCommand,
   PutObjectCommand,
+  GetObjectCommand,
   CreateBucketCommandInput,
   BucketLocationConstraint,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "node:fs";
 import { Readable } from "node:stream";
 
@@ -32,8 +34,20 @@ export interface MockS3Storage {
     sizeBytes?: number;
     encryption?: string;
   }>;
+  presignedUrlCalls?: Array<{
+    bucket: string;
+    key: string;
+    expiresInSeconds: number;
+    downloadFilename?: string;
+  }>;
   onEnsureBucket?: (bucket: string) => Promise<void>;
   onUpload?: (params: UploadBundleParams) => Promise<UploadBundleResult>;
+  onGetSignedUrl?: (params: {
+    bucket: string;
+    key: string;
+    expiresInSeconds: number;
+    downloadFilename?: string;
+  }) => Promise<string>;
 }
 
 let mockStorage: MockS3Storage | null = null;
@@ -200,3 +214,58 @@ export async function uploadBackupBundle(
     serverSideEncryption: response.ServerSideEncryption || "AES256",
   };
 }
+
+export interface PresignedDownloadUrlParams {
+  bucket: string;
+  key: string;
+  expiresInSeconds?: number;
+  downloadFilename?: string;
+  client?: S3Client;
+}
+
+/**
+ * Generates a temporary pre-signed S3 URL for downloading a backup bundle.
+ * Defaults to 15 minutes (900 seconds) expiration.
+ */
+export async function createPresignedDownloadUrl(
+  params: PresignedDownloadUrlParams,
+): Promise<string> {
+  const expiresIn = params.expiresInSeconds ?? 900;
+
+  if (mockStorage) {
+    if (!mockStorage.presignedUrlCalls) {
+      mockStorage.presignedUrlCalls = [];
+    }
+    mockStorage.presignedUrlCalls.push({
+      bucket: params.bucket,
+      key: params.key,
+      expiresInSeconds: expiresIn,
+      downloadFilename: params.downloadFilename,
+    });
+
+    if (mockStorage.onGetSignedUrl) {
+      return mockStorage.onGetSignedUrl({
+        bucket: params.bucket,
+        key: params.key,
+        expiresInSeconds: expiresIn,
+        downloadFilename: params.downloadFilename,
+      });
+    }
+
+    return `https://mock-s3.amazonaws.com/${params.bucket}/${params.key}?X-Amz-Expires=${expiresIn}&mock-signed=true`;
+  }
+
+  const client = params.client || getS3Client();
+  const command = new GetObjectCommand({
+    Bucket: params.bucket,
+    Key: params.key,
+    ...(params.downloadFilename
+      ? {
+          ResponseContentDisposition: `attachment; filename="${params.downloadFilename}"`,
+        }
+      : {}),
+  });
+
+  return getSignedUrl(client, command, { expiresIn });
+}
+

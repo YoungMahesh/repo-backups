@@ -3,6 +3,8 @@ import { renderToString } from "react-dom/server";
 import React from "react";
 import { OrganizationCard } from "@/components/github/organization-card";
 import { RepositoryInventoryTable } from "@/components/github/repository-inventory-table";
+import { RestorationGuideModal } from "@/components/github/restoration-guide-modal";
+import { BackupHistoryDrawer, formatBytes } from "@/components/github/backup-history-drawer";
 
 describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
   describe("OrganizationCard", () => {
@@ -208,5 +210,214 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       expect(html).toContain("Last: Sep 9");
       expect(html).toContain("Never backed up");
     });
+
+    it("renders History action button on each repository row for opening backup history drawer", () => {
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={mockRepositories} />,
+      );
+
+      expect(html).toContain("History");
+      expect(html).toContain("data-testid=\"view-history-btn-core-platform\"");
+      expect(html).toContain("data-testid=\"view-history-btn-docs-site\"");
+      expect(html).toContain("cursor-pointer");
+    });
+  });
+
+  describe("RestorationGuideModal (Warm-Canvas Editorial)", () => {
+    it("renders modal with canonical git clone command, copy button, and offline guidance", () => {
+      const html = renderToString(
+        <RestorationGuideModal
+          isOpen={true}
+          onClose={() => {}}
+          repoName="my-service"
+          bundleFileName="my-service-2026-09-10.bundle"
+          commitSha="abcdef1234567890abcdef1234567890abcdef12"
+        />,
+      );
+
+      // Title & Header
+      expect(html).toContain("Offline Repository Restoration");
+      expect(html).toContain("Disaster Recovery Guide");
+      expect(html).toContain("font-serif");
+
+      // Canonical generic command
+      expect(html).toContain("git clone &lt;bundle-file&gt; &lt;target-folder&gt;");
+      expect(html).toContain("Copy Command");
+      expect(html).toContain("data-testid=\"copy-canonical-cmd-btn\"");
+
+      // Contextual command for this specific backup
+      expect(html).toContain("git clone my-service-2026-09-10.bundle ./my-service");
+      expect(html).toContain("data-testid=\"copy-specific-cmd-btn\"");
+
+      // Clear guidance explaining offline bundle restoration
+      expect(html).toContain("The bundle restores complete git branches and tags offline.");
+      expect(html).toContain("Complete Offline Recovery Point");
+
+      // Warm-canvas tokens: dark code surface and hairline border
+      expect(html).toContain("bg-surface-dark");
+      expect(html).toContain("text-on-dark");
+      expect(html).toContain("border-hairline");
+      expect(html).toContain("bg-canvas");
+    });
+
+    it("returns null when isOpen is false", () => {
+      const html = renderToString(
+        <RestorationGuideModal
+          isOpen={false}
+          onClose={() => {}}
+          repoName="my-service"
+        />,
+      );
+
+      expect(html).toBe("");
+    });
+  });
+
+  describe("BackupHistoryDrawer (Warm-Canvas Editorial)", () => {
+    const mockRepo = {
+      id: "repo-drawer-1",
+      name: "payment-service",
+      fullName: "acme-corp/payment-service",
+      isPrivate: true,
+      defaultBranch: "main",
+      backupEnabled: true,
+      backupSchedule: "daily",
+      accountLogin: "acme-corp",
+    };
+
+    const mockJobs = [
+      {
+        id: "job-completed-1",
+        repositoryId: "repo-drawer-1",
+        userId: "user-1",
+        status: "completed",
+        triggerType: "manual",
+        s3Bucket: "repo-backups",
+        s3Key: "backups/user-1/acme-corp/payment-service/1700000000-c0ffee12.bundle",
+        bundleSizeBytes: 2450000, // ~2.34 MB
+        commitSha: "c0ffee1234567890abcdef",
+        createdAt: new Date("2026-09-10T12:00:00Z"),
+      },
+      {
+        id: "job-scheduled-1",
+        repositoryId: "repo-drawer-1",
+        userId: "user-1",
+        status: "completed",
+        triggerType: "scheduled",
+        s3Bucket: "repo-backups",
+        s3Key: "backups/user-1/acme-corp/payment-service/1699900000-deadbeef.bundle",
+        bundleSizeBytes: 1073741824, // 1 GB
+        commitSha: "deadbeef1234567890abcdef",
+        createdAt: new Date("2026-09-09T03:00:00Z"),
+      },
+      {
+        id: "job-failed-1",
+        repositoryId: "repo-drawer-1",
+        userId: "user-1",
+        status: "failed",
+        triggerType: "manual",
+        errorMessage: "Network timeout: git mirror clone failed after 2 retries",
+        retryCount: 2,
+        createdAt: new Date("2026-09-08T18:30:00Z"),
+      },
+    ];
+
+    it("renders drawer with repository metadata and historical backup jobs", () => {
+      const html = renderToString(
+        <BackupHistoryDrawer
+          isOpen={true}
+          onClose={() => {}}
+          repository={mockRepo}
+          initialJobs={mockJobs}
+        />,
+      );
+
+      // Repository info
+      expect(html).toContain("payment-service");
+      expect(html).toContain("acme-corp/payment-service");
+      expect(html).toContain("main");
+      expect(html).toContain("Private");
+      expect(html).toContain("Total Backups");
+      expect(html).toContain("3");
+
+      // Completed job 1: timestamp, formatted file size (2.34 MB), commit SHA, manual trigger
+      expect(html).toContain("c0ffee1");
+      expect(html).toContain("2.34 MB");
+      expect(html).toContain("Manual");
+      expect(html).toContain("Completed");
+
+      // Completed job 2: scheduled trigger, formatted file size (1 GB)
+      expect(html).toContain("deadbee");
+      expect(html).toContain("1 GB");
+      expect(html).toContain("Scheduled");
+
+      // Actions on completed jobs: Download and Restore Guide buttons
+      expect(html).toContain("data-testid=\"download-backup-btn-job-completed-1\"");
+      expect(html).toContain("data-testid=\"restore-guide-btn-job-completed-1\"");
+      expect(html).toContain("Download");
+      expect(html).toContain("Restore Guide");
+
+      // Failed job: displays error message details and Retry action button
+      expect(html).toContain("Failed");
+      expect(html).toContain("Network timeout: git mirror clone failed after 2 retries");
+      expect(html).toContain("Retried 2 times");
+      expect(html).toContain("data-testid=\"retry-backup-btn-job-failed-1\"");
+      expect(html).toContain("Retry Backup");
+
+      // Design tokens
+      expect(html).toContain("bg-canvas");
+      expect(html).toContain("border-hairline");
+      expect(html).toContain("font-serif");
+    });
+
+    it("renders empty state message when there are no backup jobs", () => {
+      const html = renderToString(
+        <BackupHistoryDrawer
+          isOpen={true}
+          onClose={() => {}}
+          repository={mockRepo}
+          initialJobs={[]}
+        />,
+      );
+
+      expect(html).toContain("No backup history available");
+      expect(html).toContain("Trigger an on-demand backup to create your first standalone Git bundle.");
+    });
+
+    it("returns null when isOpen is false or repository is null", () => {
+      const htmlClosed = renderToString(
+        <BackupHistoryDrawer
+          isOpen={false}
+          onClose={() => {}}
+          repository={mockRepo}
+        />,
+      );
+      expect(htmlClosed).toBe("");
+
+      const htmlNoRepo = renderToString(
+        <BackupHistoryDrawer
+          isOpen={true}
+          onClose={() => {}}
+          repository={null}
+        />,
+      );
+      expect(htmlNoRepo).toBe("");
+    });
+  });
+
+  describe("formatBytes utility", () => {
+    it("formats bytes into human readable KB, MB, and GB values", () => {
+      expect(formatBytes(0)).toBe("0 B");
+      expect(formatBytes(null)).toBe("0 B");
+      expect(formatBytes(undefined)).toBe("0 B");
+      expect(formatBytes(512)).toBe("512 B");
+      expect(formatBytes(1024)).toBe("1 KB");
+      expect(formatBytes(2048)).toBe("2 KB");
+      expect(formatBytes(1048576)).toBe("1 MB");
+      expect(formatBytes(2500000)).toBe("2.38 MB");
+      expect(formatBytes(1073741824)).toBe("1 GB");
+      expect(formatBytes(5368709120)).toBe("5 GB");
+    });
   });
 });
+
