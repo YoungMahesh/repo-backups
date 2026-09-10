@@ -111,5 +111,44 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       expect(html).toContain("No repositories authorized yet");
       expect(html).toContain("Configure repository access in your GitHub App installation");
     });
+
+    it("renders interactive 'Enable Backup' toggle switches with proper aria attributes", () => {
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={mockRepositories} />,
+      );
+
+      expect(html).toContain('role="switch"');
+      expect(html).toContain('aria-checked="false"');
+      expect(html).toContain('aria-checked="true"');
+      expect(html).toContain("Enable Backup");
+    });
+
+    it("renders schedule selector offering Daily, Weekly, and Manual options", () => {
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={mockRepositories} />,
+      );
+
+      expect(html).toContain("<select");
+      expect(html).toContain('value="daily"');
+      expect(html).toContain('value="weekly"');
+      expect(html).toContain('value="manual"');
+      expect(html).toContain("Daily");
+      expect(html).toContain("Weekly");
+      expect(html).toContain("Manual");
+    });
+
+    it("displays clear visual distinction and active badges for Enrolled Repositories", () => {
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={mockRepositories} />,
+      );
+
+      // Enrolled repository (repo-2) displays Enrolled badge and active schedule badge
+      expect(html).toContain("Enrolled");
+      expect(html).toContain("border-l-2");
+      expect(html).toContain("border-l-primary");
+
+      // Non-enrolled repository (repo-1) displays Inactive
+      expect(html).toContain("Inactive");
+    });
   });
 });

@@ -23,13 +23,25 @@ export interface RepositoryItem {
 interface RepositoryInventoryTableProps {
   repositories: RepositoryItem[];
   isLoading?: boolean;
+  onUpdateRepository?: (
+    repoId: string,
+    updates: {
+      backupEnabled?: boolean;
+      backupSchedule?: "daily" | "weekly" | "manual";
+    },
+  ) => Promise<void>;
 }
 
 export function RepositoryInventoryTable({
   repositories,
   isLoading = false,
+  onUpdateRepository,
 }: RepositoryInventoryTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [updatingRepoIds, setUpdatingRepoIds] = useState<Record<string, boolean>>({});
+  const [localOverrides, setLocalOverrides] = useState<
+    Record<string, { backupEnabled?: boolean; backupSchedule?: string }>
+  >({});
 
   const filteredRepositories = useMemo(() => {
     if (!searchQuery.trim()) return repositories;
@@ -40,6 +52,99 @@ export function RepositoryInventoryTable({
         repo.fullName.toLowerCase().includes(query),
     );
   }, [repositories, searchQuery]);
+
+  const handleToggleBackup = async (repo: RepositoryItem) => {
+    const currentEnabled =
+      localOverrides[repo.id]?.backupEnabled !== undefined
+        ? localOverrides[repo.id].backupEnabled!
+        : repo.backupEnabled;
+
+    const newEnabled = !currentEnabled;
+
+    // Optimistic local state update
+    setLocalOverrides((prev) => ({
+      ...prev,
+      [repo.id]: {
+        ...prev[repo.id],
+        backupEnabled: newEnabled,
+      },
+    }));
+
+    setUpdatingRepoIds((prev) => ({ ...prev, [repo.id]: true }));
+
+    try {
+      if (onUpdateRepository) {
+        await onUpdateRepository(repo.id, { backupEnabled: newEnabled });
+      } else {
+        const res = await fetch(`/api/repositories/${repo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backupEnabled: newEnabled }),
+        });
+        if (!res.ok) {
+          throw new Error("Failed to update backup status");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to toggle backup:", err);
+      // Revert optimistic update on failure
+      setLocalOverrides((prev) => ({
+        ...prev,
+        [repo.id]: {
+          ...prev[repo.id],
+          backupEnabled: currentEnabled,
+        },
+      }));
+    } finally {
+      setUpdatingRepoIds((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
+  const handleScheduleChange = async (
+    repo: RepositoryItem,
+    newSchedule: "daily" | "weekly" | "manual",
+  ) => {
+    const currentSchedule =
+      localOverrides[repo.id]?.backupSchedule || repo.backupSchedule;
+
+    // Optimistic local update
+    setLocalOverrides((prev) => ({
+      ...prev,
+      [repo.id]: {
+        ...prev[repo.id],
+        backupSchedule: newSchedule,
+      },
+    }));
+
+    setUpdatingRepoIds((prev) => ({ ...prev, [repo.id]: true }));
+
+    try {
+      if (onUpdateRepository) {
+        await onUpdateRepository(repo.id, { backupSchedule: newSchedule });
+      } else {
+        const res = await fetch(`/api/repositories/${repo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backupSchedule: newSchedule }),
+        });
+        if (!res.ok) {
+          throw new Error("Failed to update schedule");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to change schedule:", err);
+      // Revert optimistic update
+      setLocalOverrides((prev) => ({
+        ...prev,
+        [repo.id]: {
+          ...prev[repo.id],
+          backupSchedule: currentSchedule,
+        },
+      }));
+    } finally {
+      setUpdatingRepoIds((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
 
   return (
     <div
@@ -106,8 +211,14 @@ export function RepositoryInventoryTable({
                 <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted">
                   Default Branch
                 </th>
+                <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted">
+                  Backup Status
+                </th>
+                <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted">
+                  Schedule
+                </th>
                 <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted text-right">
-                  Access
+                  Enable Backup
                 </th>
               </tr>
             </thead>
@@ -117,10 +228,24 @@ export function RepositoryInventoryTable({
                 const orgPrefix = parts.length > 1 ? parts[0] : repo.accountLogin;
                 const repoName = parts.length > 1 ? parts[1] : repo.name;
 
+                const isEnrolled =
+                  localOverrides[repo.id]?.backupEnabled !== undefined
+                    ? localOverrides[repo.id].backupEnabled!
+                    : repo.backupEnabled;
+
+                const currentSchedule =
+                  localOverrides[repo.id]?.backupSchedule || repo.backupSchedule || "daily";
+
+                const isUpdating = !!updatingRepoIds[repo.id];
+
                 return (
                   <tr
                     key={repo.id}
-                    className="hover:bg-surface-soft/30 transition-colors"
+                    className={`transition-colors ${
+                      isEnrolled
+                        ? "border-l-2 border-l-primary bg-primary/[0.02]"
+                        : "hover:bg-surface-soft/30"
+                    }`}
                     data-testid={`repo-row-${repo.name}`}
                   >
                     {/* Repository Name with Org Prefix */}
@@ -184,9 +309,75 @@ export function RepositoryInventoryTable({
                       </div>
                     </td>
 
-                    {/* Access Level */}
+                    {/* Backup Status / Enrolled Distinction */}
+                    <td className="py-3 px-4">
+                      {isEnrolled ? (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                            Enrolled
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-hairline bg-surface-card px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted font-sans">
+                            {currentSchedule}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-hairline/60 bg-surface-soft px-2.5 py-0.5 text-xs font-medium text-muted">
+                          Inactive
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Schedule Selector */}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={currentSchedule}
+                          onChange={(e) =>
+                            handleScheduleChange(
+                              repo,
+                              e.target.value as "daily" | "weekly" | "manual",
+                            )
+                          }
+                          disabled={isUpdating}
+                          aria-label={`Backup schedule for ${repo.name}`}
+                          className="rounded-md border border-hairline bg-canvas px-2.5 py-1 text-xs text-ink transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 cursor-pointer"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="manual">Manual</option>
+                        </select>
+                      </div>
+                    </td>
+
+                    {/* Interactive Enable Backup Toggle Switch */}
                     <td className="py-3 px-4 text-right">
-                      <span className="font-sans text-xs text-muted">Read-Only</span>
+                      <div className="inline-flex items-center gap-2 justify-end">
+                        <span className="sr-only">Enable Backup</span>
+                        {isUpdating && (
+                          <span className="h-3 w-3 animate-spin rounded-full border border-hairline border-t-primary" />
+                        )}
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isEnrolled}
+                          aria-label={`Enable Backup for ${repo.name}`}
+                          disabled={isUpdating}
+                          onClick={() => handleToggleBackup(repo)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 disabled:opacity-50 ${
+                            isEnrolled
+                              ? "bg-primary"
+                              : "bg-surface-cream-strong border border-hairline"
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-on-primary shadow-xs ring-0 transition duration-200 ease-in-out ${
+                              isEnrolled ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

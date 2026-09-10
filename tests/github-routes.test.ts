@@ -10,7 +10,8 @@ import { GET as connectHandler } from "@/app/api/github/connect/route";
 import { GET as callbackHandler } from "@/app/api/github/callback/route";
 import { POST as syncHandler } from "@/app/api/github/sync/route";
 import { GET as installationsHandler } from "@/app/api/installations/route";
-import { GET as repositoriesHandler } from "@/app/api/repositories/route";
+import { GET as repositoriesHandler, PATCH as updateRepositoriesHandler } from "@/app/api/repositories/route";
+import { GET as singleRepositoryHandler, PATCH as updateSingleRepositoryHandler } from "@/app/api/repositories/[id]/route";
 
 describe("GitHub High-Level Route Handlers", () => {
   const TEST_USER_ID = "route-test-user-1";
@@ -305,6 +306,192 @@ describe("GitHub High-Level Route Handlers", () => {
       expect(data.repositories.length).toBe(3);
       expect(data.repositories[0].name).toBeDefined();
       expect(data.repositories[0].defaultBranch).toBeDefined();
+    });
+  });
+
+  describe("PATCH /api/repositories/[id] & PATCH /api/repositories", () => {
+    let testRepoId: string;
+
+    beforeEach(async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValue({
+        user: {
+          id: TEST_USER_ID,
+          email: "routetest@example.com",
+          name: "Route Test User",
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        session: {
+          id: "session-1",
+          userId: TEST_USER_ID,
+          expiresAt: new Date(),
+          token: "token-1",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      const repos = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.userId, TEST_USER_ID));
+      if (repos.length > 0) {
+        testRepoId = repos[0].id;
+      }
+    });
+
+    it("returns 401 when user is unauthenticated", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValue(null);
+
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backupEnabled: true }),
+      });
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 404 when repository does not exist or belongs to another user", async () => {
+      const req = new NextRequest(
+        "http://localhost:3000/api/repositories/non-existent-id",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ backupEnabled: true }),
+        },
+      );
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: "non-existent-id" }),
+      });
+
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error).toContain("Repository not found");
+    });
+
+    it("returns 400 when invalid backupSchedule value is provided", async () => {
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backupSchedule: "hourly" }),
+      });
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("Invalid backupSchedule");
+    });
+
+    it("persists backupEnabled toggled to true", async () => {
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backupEnabled: true }),
+      });
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.repository.backupEnabled).toBe(true);
+
+      // Verify in DB
+      const [updated] = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.id, testRepoId));
+      expect(updated.backupEnabled).toBe(true);
+    });
+
+    it("persists backupSchedule changed to weekly", async () => {
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backupSchedule: "weekly" }),
+      });
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.repository.backupSchedule).toBe("weekly");
+
+      // Verify in DB
+      const [updated] = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.id, testRepoId));
+      expect(updated.backupSchedule).toBe("weekly");
+    });
+
+    it("disabling backup retains existing repository history and marks repository inactive", async () => {
+      const pastBackupDate = new Date("2026-09-01T12:00:00Z");
+      // Set backup history on the repository
+      await db
+        .update(githubRepositories)
+        .set({
+          backupEnabled: true,
+          lastBackupAt: pastBackupDate,
+          lastBackupStatus: "success",
+        })
+        .where(eq(githubRepositories.id, testRepoId));
+
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backupEnabled: false }),
+      });
+      const res = await updateSingleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.repository.backupEnabled).toBe(false);
+
+      // Verify in DB that history is preserved
+      const [updated] = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.id, testRepoId));
+      expect(updated.backupEnabled).toBe(false);
+      expect(updated.lastBackupAt).toBeDefined();
+      expect(updated.lastBackupStatus).toBe("success");
+    });
+
+    it("PATCH /api/repositories also updates repository configuration with id in body", async () => {
+      const req = new NextRequest("http://localhost:3000/api/repositories", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: testRepoId,
+          backupEnabled: true,
+          backupSchedule: "manual",
+        }),
+      });
+      const res = await updateRepositoriesHandler(req);
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.repository.backupSchedule).toBe("manual");
+      expect(data.repository.backupEnabled).toBe(true);
+    });
+
+    it("GET /api/repositories/[id] fetches single repository for authenticated user", async () => {
+      const req = new NextRequest(`http://localhost:3000/api/repositories/${testRepoId}`);
+      const res = await singleRepositoryHandler(req, {
+        params: Promise.resolve({ id: testRepoId }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.repository).toBeDefined();
+      expect(data.repository.id).toBe(testRepoId);
     });
   });
 });

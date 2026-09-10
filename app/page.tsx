@@ -156,6 +156,38 @@ export default function HomePage() {
     }
   };
 
+  const handleUpdateRepository = async (
+    repoId: string,
+    updates: {
+      backupEnabled?: boolean;
+      backupSchedule?: "daily" | "weekly" | "manual";
+    },
+  ) => {
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`/api/repositories/${repoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update repository settings");
+      }
+      setRepositories((prev) =>
+        prev.map((r) => (r.id === repoId ? { ...r, ...data.repository } : r)),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Failed to update repository backup configuration.";
+      setErrorMessage(msg);
+      throw err;
+    }
+  };
+
+
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -375,6 +407,7 @@ export default function HomePage() {
                   <RepositoryInventoryTable
                     repositories={repositories}
                     isLoading={isLoadingData}
+                    onUpdateRepository={handleUpdateRepository}
                   />
                 </div>
               ) : (
