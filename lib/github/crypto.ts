@@ -103,3 +103,53 @@ export function getGitHubAppInstallationUrl(state: string): string {
   const slug = getGitHubAppSlug();
   return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
 }
+
+/**
+ * Signs a payload with HMAC-SHA256 in GitHub's X-Hub-Signature-256 format (`sha256=<hex>`).
+ */
+export function signWebhookPayload(payload: string, secret?: string): string {
+  const webhookSecret = secret ?? process.env.GITHUB_APP_WEBHOOK_SECRET ?? "";
+  const hex = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(payload, "utf-8")
+    .digest("hex");
+  return `sha256=${hex}`;
+}
+
+/**
+ * Validates incoming GitHub webhook HMAC-SHA256 signature (X-Hub-Signature-256).
+ */
+export function verifyWebhookSignature(
+  payload: string,
+  signatureHeader?: string | null,
+  secret?: string,
+): { valid: boolean; error?: string } {
+  const webhookSecret = secret ?? process.env.GITHUB_APP_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return { valid: false, error: "Webhook secret is not configured" };
+  }
+
+  if (!signatureHeader || typeof signatureHeader !== "string") {
+    return { valid: false, error: "Missing signature header (X-Hub-Signature-256)" };
+  }
+
+  if (!signatureHeader.startsWith("sha256=")) {
+    return { valid: false, error: "Malformed signature header (expected sha256=...)" };
+  }
+
+  const signatureHex = signatureHeader.slice(7);
+  const expectedHex = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(payload, "utf-8")
+    .digest("hex");
+
+  const sigBuf = Buffer.from(signatureHex, "utf-8");
+  const expBuf = Buffer.from(expectedHex, "utf-8");
+
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return { valid: false, error: "Invalid payload signature" };
+  }
+
+  return { valid: true };
+}
+

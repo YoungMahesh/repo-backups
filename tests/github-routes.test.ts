@@ -12,6 +12,7 @@ import { POST as syncHandler } from "@/app/api/github/sync/route";
 import { GET as installationsHandler } from "@/app/api/installations/route";
 import { GET as repositoriesHandler, PATCH as updateRepositoriesHandler } from "@/app/api/repositories/route";
 import { GET as singleRepositoryHandler, PATCH as updateSingleRepositoryHandler } from "@/app/api/repositories/[id]/route";
+import { GET as setupStatusHandler } from "@/app/api/github/setup-status/route";
 
 describe("GitHub High-Level Route Handlers", () => {
   const TEST_USER_ID = "route-test-user-1";
@@ -121,6 +122,22 @@ describe("GitHub High-Level Route Handlers", () => {
       expect(data.state).toBeDefined();
     });
   });
+
+  describe("GET /api/github/setup-status", () => {
+    it("returns setup configuration status and metadata", async () => {
+      const res = await setupStatusHandler();
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(typeof data.isConfigured).toBe("boolean");
+      expect(Array.isArray(data.missing)).toBe(true);
+      expect(data.callbackPath).toBe("/api/github/callback");
+      expect(data.webhookPath).toBe("/api/github/webhook");
+      expect(Array.isArray(data.permissions)).toBe(true);
+      expect(data.permissions.some((p: any) => p.resource === "Contents" && p.access === "read")).toBe(true);
+      expect(data.permissions.some((p: any) => p.resource === "Metadata" && p.access === "read")).toBe(true);
+    });
+  });
+
 
   describe("GET /api/github/callback", () => {
     it("rejects invalid state parameter with 400", async () => {

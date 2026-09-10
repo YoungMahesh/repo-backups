@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import {
   signState,
   verifyState,
@@ -91,3 +91,92 @@ describe("GitHub Cryptographic State Signing & Verification", () => {
     );
   });
 });
+
+describe("GitHub Webhook HMAC-SHA256 Signature Verification", () => {
+  const secret = "test-webhook-secret-key-12345";
+  const payload = JSON.stringify({ action: "added", installation: { id: 999 } });
+
+  it("successfully validates correct HMAC-SHA256 signature", async () => {
+    const { signWebhookPayload, verifyWebhookSignature } = await import(
+      "@/lib/github/crypto"
+    );
+    const signatureHeader = signWebhookPayload(payload, secret);
+    expect(signatureHeader.startsWith("sha256=")).toBe(true);
+
+    const result = verifyWebhookSignature(payload, signatureHeader, secret);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("rejects tampered webhook payload", async () => {
+    const { signWebhookPayload, verifyWebhookSignature } = await import(
+      "@/lib/github/crypto"
+    );
+    const signatureHeader = signWebhookPayload(payload, secret);
+
+    const tamperedPayload = JSON.stringify({ action: "added", installation: { id: 888 } });
+    const result = verifyWebhookSignature(tamperedPayload, signatureHeader, secret);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid payload signature");
+  });
+
+  it("rejects invalid or malformed signature header", async () => {
+    const { verifyWebhookSignature } = await import("@/lib/github/crypto");
+
+    expect(verifyWebhookSignature(payload, null, secret).valid).toBe(false);
+    expect(verifyWebhookSignature(payload, "", secret).valid).toBe(false);
+    expect(verifyWebhookSignature(payload, "malformed-signature", secret).valid).toBe(false);
+    expect(verifyWebhookSignature(payload, "sha1=12345", secret).valid).toBe(false);
+  });
+
+  it("returns error when webhook secret is missing", async () => {
+    const { verifyWebhookSignature } = await import("@/lib/github/crypto");
+    const result = verifyWebhookSignature(payload, "sha256=12345", "");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Webhook secret is not configured");
+  });
+});
+
+describe("GitHub App Config Status Check", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it("reports missing variables when credentials are not configured", async () => {
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_APP_WEBHOOK_SECRET;
+
+    const { getGitHubAppConfigStatus } = await import("@/lib/github/config");
+    const status = getGitHubAppConfigStatus();
+
+    expect(status.isConfigured).toBe(false);
+    expect(status.missing).toContain("GITHUB_APP_ID");
+    expect(status.missing).toContain("GITHUB_APP_PRIVATE_KEY");
+    expect(status.missing).toContain("GITHUB_APP_WEBHOOK_SECRET");
+    expect(status.appIdConfigured).toBe(false);
+    expect(status.privateKeyConfigured).toBe(false);
+  });
+
+  it("reports configured when all credentials are set", async () => {
+    process.env.GITHUB_APP_ID = "123456";
+    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----...";
+    process.env.GITHUB_APP_WEBHOOK_SECRET = "secret";
+
+    const { getGitHubAppConfigStatus } = await import("@/lib/github/config");
+    const status = getGitHubAppConfigStatus();
+
+    expect(status.isConfigured).toBe(true);
+    expect(status.missing.length).toBe(0);
+    expect(status.appIdConfigured).toBe(true);
+    expect(status.privateKeyConfigured).toBe(true);
+    expect(status.webhookSecretConfigured).toBe(true);
+  });
+});
+

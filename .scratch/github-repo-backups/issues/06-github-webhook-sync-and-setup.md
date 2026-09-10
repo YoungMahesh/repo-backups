@@ -5,11 +5,12 @@ Enable real-time synchronization between GitHub App settings and the platform's 
 
 **Blocked by:** 01: Connect GitHub Organization and List Available Repositories
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A webhook endpoint (`/api/github/webhook`) verifies incoming payload signatures against `GITHUB_APP_WEBHOOK_SECRET`
-- [ ] Receiving an `installation_repositories` event with action `added` inserts the new repositories into the user's inventory
-- [ ] Receiving an `installation_repositories` event with action `removed` removes or deactivates the revoked repositories in the inventory
-- [ ] If GitHub App credentials (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, etc.) are missing, the dashboard displays an editorial setup banner
-- [ ] The setup banner provides clear step-by-step instructions on creating the GitHub App with read-only permissions (`Contents: read`, `Metadata: read`) and callback URLs
-- [ ] High-level tests verify valid and invalid webhook signature handling and inventory updates upon repository added/removed payloads
+- [x] A webhook endpoint (`/api/github/webhook`) verifies incoming payload signatures against `GITHUB_APP_WEBHOOK_SECRET`
+- [x] Receiving an `installation_repositories` event with action `added` inserts the new repositories into the user's inventory
+- [x] Receiving an `installation_repositories` event with action `removed` removes or deactivates the revoked repositories in the inventory
+- [x] If GitHub App credentials (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, etc.) are missing, the dashboard displays an editorial setup banner
+- [x] The setup banner provides clear step-by-step instructions on creating the GitHub App with read-only permissions (`Contents: read`, `Metadata: read`) and callback URLs
+- [x] High-level tests verify valid and invalid webhook signature handling and inventory updates upon repository added/removed payloads
+

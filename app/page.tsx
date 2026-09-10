@@ -15,6 +15,9 @@ import {
   RepositoryInventoryTable,
   RepositoryItem,
 } from "@/components/github/repository-inventory-table";
+import { GitHubAppSetupBanner } from "@/components/github/setup-banner";
+import type { GitHubAppConfigStatus } from "@/lib/github/config";
+
 
 export default function HomePage() {
   const router = useRouter();
@@ -38,6 +41,24 @@ export default function HomePage() {
   const [repositories, setRepositories] = useState<RepositoryItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [setupStatus, setSetupStatus] = useState<GitHubAppConfigStatus | null>(null);
+
+  const checkSetupStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/github/setup-status");
+      if (res.ok) {
+        const data = await res.json();
+        setSetupStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to check GitHub setup status:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkSetupStatus();
+  }, [checkSetupStatus]);
+
 
   const resetForm = () => {
     setName("");
@@ -91,12 +112,14 @@ export default function HomePage() {
         const repoData = await repoRes.json();
         setRepositories(repoData.repositories || []);
       }
+      await checkSetupStatus();
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
     } finally {
       setIsLoadingData(false);
     }
-  }, []);
+  }, [checkSetupStatus]);
+
 
   useEffect(() => {
     let ignore = false;
@@ -372,8 +395,14 @@ export default function HomePage() {
             </div>
           )}
 
+          {/* GitHub App Setup Banner when credentials are missing */}
+          {setupStatus && !setupStatus.isConfigured && (
+            <GitHubAppSetupBanner status={setupStatus} />
+          )}
+
           {/* Main Content Area */}
           {isSessionPending ? (
+
             /* Loading Skeleton */
             <Card variant="feature" className="space-y-4 animate-pulse">
               <div className="h-6 w-1/2 rounded bg-surface-cream-strong mx-auto" />
