@@ -30,17 +30,38 @@ interface RepositoryInventoryTableProps {
       backupSchedule?: "daily" | "weekly" | "manual";
     },
   ) => Promise<void>;
+  onBackupNow?: (repoId: string) => Promise<void>;
+}
+
+function formatBackupDate(date: string | Date): string {
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(date);
+  }
 }
 
 export function RepositoryInventoryTable({
   repositories,
   isLoading = false,
   onUpdateRepository,
+  onBackupNow,
 }: RepositoryInventoryTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [updatingRepoIds, setUpdatingRepoIds] = useState<Record<string, boolean>>({});
+  const [backingUpRepoIds, setBackingUpRepoIds] = useState<Record<string, boolean>>({});
   const [localOverrides, setLocalOverrides] = useState<
     Record<string, { backupEnabled?: boolean; backupSchedule?: string }>
+  >({});
+  const [statusOverrides, setStatusOverrides] = useState<
+    Record<string, { lastBackupStatus?: string; lastBackupAt?: Date | string }>
   >({});
 
   const filteredRepositories = useMemo(() => {
@@ -146,6 +167,48 @@ export function RepositoryInventoryTable({
     }
   };
 
+  const handleBackupNow = async (repo: RepositoryItem) => {
+    setBackingUpRepoIds((prev) => ({ ...prev, [repo.id]: true }));
+    setStatusOverrides((prev) => ({
+      ...prev,
+      [repo.id]: {
+        ...prev[repo.id],
+        lastBackupStatus: "running",
+      },
+    }));
+
+    try {
+      if (onBackupNow) {
+        await onBackupNow(repo.id);
+      } else {
+        const res = await fetch(`/api/repositories/${repo.id}/backup`, {
+          method: "POST",
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Failed to execute backup job");
+        }
+      }
+      setStatusOverrides((prev) => ({
+        ...prev,
+        [repo.id]: {
+          lastBackupStatus: "success",
+          lastBackupAt: new Date(),
+        },
+      }));
+    } catch (err) {
+      console.error("Failed to backup repository:", err);
+      setStatusOverrides((prev) => ({
+        ...prev,
+        [repo.id]: {
+          lastBackupStatus: "failed",
+        },
+      }));
+    } finally {
+      setBackingUpRepoIds((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
   return (
     <div
       className="space-y-4 rounded-lg border border-hairline bg-canvas p-6 shadow-xs"
@@ -218,7 +281,7 @@ export function RepositoryInventoryTable({
                   Schedule
                 </th>
                 <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted text-right">
-                  Enable Backup
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -237,16 +300,30 @@ export function RepositoryInventoryTable({
                   localOverrides[repo.id]?.backupSchedule || repo.backupSchedule || "daily";
 
                 const isUpdating = !!updatingRepoIds[repo.id];
+                const isBackingUp = !!backingUpRepoIds[repo.id];
+
+                const currentStatus =
+                  statusOverrides[repo.id]?.lastBackupStatus !== undefined
+                    ? statusOverrides[repo.id].lastBackupStatus
+                    : repo.lastBackupStatus;
+
+                const currentLastBackupAt =
+                  statusOverrides[repo.id]?.lastBackupAt !== undefined
+                    ? statusOverrides[repo.id].lastBackupAt
+                    : repo.lastBackupAt;
 
                 return (
                   <tr
                     key={repo.id}
                     className={`transition-colors ${
-                      isEnrolled
+                      isBackingUp
+                        ? "border-l-2 border-l-primary bg-primary/[0.05] animate-pulse"
+                        : isEnrolled
                         ? "border-l-2 border-l-primary bg-primary/[0.02]"
                         : "hover:bg-surface-soft/30"
                     }`}
                     data-testid={`repo-row-${repo.name}`}
+                    aria-busy={isBackingUp}
                   >
                     {/* Repository Name with Org Prefix */}
                     <td className="py-3 px-4">
@@ -309,16 +386,49 @@ export function RepositoryInventoryTable({
                       </div>
                     </td>
 
-                    {/* Backup Status / Enrolled Distinction */}
+                    {/* Backup Status / Enrolled Distinction / Timestamp */}
                     <td className="py-3 px-4">
                       {isEnrolled ? (
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-                            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                            Enrolled
-                          </span>
-                          <span className="inline-flex items-center rounded-full border border-hairline bg-surface-card px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted font-sans">
-                            {currentSchedule}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+                              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                              Enrolled
+                            </span>
+                            {isBackingUp || currentStatus === "running" ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning"
+                                data-testid={`backup-badge-running-${repo.name}`}
+                              >
+                                <span className="h-1.5 w-1.5 animate-spin rounded-full border border-warning border-t-transparent" />
+                                Running
+                              </span>
+                            ) : currentStatus === "success" ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/15 px-2 py-0.5 text-xs font-medium text-success"
+                                data-testid={`backup-badge-success-${repo.name}`}
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                                Success
+                              </span>
+                            ) : currentStatus === "failed" ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border border-error/30 bg-error/15 px-2 py-0.5 text-xs font-medium text-error"
+                                data-testid={`backup-badge-failed-${repo.name}`}
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-error" />
+                                Failed
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full border border-hairline bg-surface-card px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted font-sans">
+                                {currentSchedule}
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-sans text-[11px] text-muted-soft">
+                            {currentLastBackupAt
+                              ? `Last: ${formatBackupDate(currentLastBackupAt)}`
+                              : "Never backed up"}
                           </span>
                         </div>
                       ) : (
@@ -339,7 +449,7 @@ export function RepositoryInventoryTable({
                               e.target.value as "daily" | "weekly" | "manual",
                             )
                           }
-                          disabled={isUpdating}
+                          disabled={isUpdating || isBackingUp}
                           aria-label={`Backup schedule for ${repo.name}`}
                           className="rounded-md border border-hairline bg-canvas px-2.5 py-1 text-xs text-ink transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 cursor-pointer"
                         >
@@ -350,9 +460,38 @@ export function RepositoryInventoryTable({
                       </div>
                     </td>
 
-                    {/* Interactive Enable Backup Toggle Switch */}
+                    {/* Actions: On-Demand "Backup Now" Button + Toggle Switch */}
                     <td className="py-3 px-4 text-right">
                       <div className="inline-flex items-center gap-2 justify-end">
+                        {isEnrolled && (
+                          <button
+                            type="button"
+                            data-testid={`backup-now-btn-${repo.name}`}
+                            disabled={isBackingUp || isUpdating}
+                            onClick={() => handleBackupNow(repo)}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-canvas border border-hairline px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-soft active:bg-surface-card transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+                            title="Trigger an immediate backup"
+                          >
+                            {isBackingUp ? (
+                              <>
+                                <span className="h-3 w-3 animate-spin rounded-full border border-hairline border-t-primary" />
+                                <span>Backing up...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="h-3 w-3 text-primary"
+                                  viewBox="0 0 16 16"
+                                  fill="currentColor"
+                                  aria-hidden="true"
+                                >
+                                  <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm-.75 4.75a.75.75 0 0 1 1.5 0v3.5l2.25 1.5a.75.75 0 1 1-.832 1.248l-2.625-1.75A.75.75 0 0 1 7.25 8.5V4.75Z" />
+                                </svg>
+                                <span>Backup Now</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                         <span className="sr-only">Enable Backup</span>
                         {isUpdating && (
                           <span className="h-3 w-3 animate-spin rounded-full border border-hairline border-t-primary" />
@@ -362,7 +501,7 @@ export function RepositoryInventoryTable({
                           role="switch"
                           aria-checked={isEnrolled}
                           aria-label={`Enable Backup for ${repo.name}`}
-                          disabled={isUpdating}
+                          disabled={isUpdating || isBackingUp}
                           onClick={() => handleToggleBackup(repo)}
                           className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 disabled:opacity-50 ${
                             isEnrolled

@@ -150,5 +150,63 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       // Non-enrolled repository (repo-1) displays Inactive
       expect(html).toContain("Inactive");
     });
+
+    it("renders on-demand 'Backup Now' action button for Enrolled Repositories", () => {
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={mockRepositories} />,
+      );
+
+      // Enrolled repo-2 should display Backup Now button
+      expect(html).toContain("Backup Now");
+      expect(html).toContain("data-testid=\"backup-now-btn-docs-site\"");
+      // Inactive repo-1 should NOT display a Backup Now button for core-platform
+      expect(html).not.toContain("data-testid=\"backup-now-btn-core-platform\"");
+    });
+
+    it("renders updated backup status badges (Success, Failed, Running) and last backup timestamp", () => {
+      const reposWithStatuses = [
+        {
+          ...mockRepositories[1],
+          id: "repo-success",
+          name: "success-repo",
+          fullName: "acme-corp/success-repo",
+          backupEnabled: true,
+          lastBackupStatus: "success",
+          lastBackupAt: new Date("2026-09-10T14:30:00Z"),
+        },
+        {
+          ...mockRepositories[1],
+          id: "repo-failed",
+          name: "failed-repo",
+          fullName: "acme-corp/failed-repo",
+          backupEnabled: true,
+          lastBackupStatus: "failed",
+          lastBackupAt: new Date("2026-09-09T10:15:00Z"),
+        },
+        {
+          ...mockRepositories[1],
+          id: "repo-running",
+          name: "running-repo",
+          fullName: "acme-corp/running-repo",
+          backupEnabled: true,
+          lastBackupStatus: "running",
+          lastBackupAt: null,
+        },
+      ];
+
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={reposWithStatuses} />,
+      );
+
+      expect(html).toContain("Success");
+      expect(html).toContain("Failed");
+      expect(html).toContain("Running");
+      expect(html).toContain("backup-badge-success-success-repo");
+      expect(html).toContain("backup-badge-failed-failed-repo");
+      expect(html).toContain("backup-badge-running-running-repo");
+      expect(html).toContain("Last: Sep 10");
+      expect(html).toContain("Last: Sep 9");
+      expect(html).toContain("Never backed up");
+    });
   });
 });

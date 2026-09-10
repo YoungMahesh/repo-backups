@@ -27,6 +27,7 @@ export interface GitHubRepository {
 export interface MockGitHubData {
   installation?: GitHubInstallation;
   repositories?: GitHubRepository[];
+  installationToken?: string | null;
 }
 
 let mockClientData: MockGitHubData | null = null;
@@ -131,6 +132,13 @@ export async function fetchInstallationDetails(
 export async function fetchInstallationToken(
   installationId: number,
 ): Promise<string | null> {
+  if (mockClientData?.installationToken !== undefined) {
+    return mockClientData.installationToken;
+  }
+  if (mockClientData) {
+    return "mock-ghs-installation-token-12345";
+  }
+
   const jwt = generateGitHubAppJwt();
   if (!jwt) {
     return null;

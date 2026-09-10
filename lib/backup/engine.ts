@@ -1,0 +1,339 @@
+import { and, eq } from "drizzle-orm";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { db } from "@/db";
+import { backupJobs, githubRepositories, githubInstallations } from "@/db/schema";
+import { fetchInstallationToken } from "@/lib/github/client";
+import {
+  ensureBucketExists,
+  generateBackupKey,
+  getDefaultBackupBucket,
+  uploadBackupBundle,
+} from "@/lib/storage/s3";
+
+const execFileAsync = promisify(execFile);
+
+export interface GitBundleResult {
+  commitSha: string;
+  bundleSizeBytes: number;
+  bundlePath: string;
+  cleanup: () => Promise<void>;
+}
+
+export interface MockGitRunner {
+  runBundle?: (
+    repoFullName: string,
+    token: string | null,
+    attempt: number,
+  ) => Promise<{
+    commitSha: string;
+    bundleSizeBytes: number;
+    bundleContent?: Buffer | string;
+  }>;
+}
+
+let mockGitRunner: MockGitRunner | null = null;
+let retryDelayOverride: number | null = null;
+
+export function setMockGitRunner(runner: MockGitRunner | null) {
+  mockGitRunner = runner;
+}
+
+export function getMockGitRunner(): MockGitRunner | null {
+  return mockGitRunner;
+}
+
+export function setRetryDelayOverride(delayMs: number | null) {
+  retryDelayOverride = delayMs;
+}
+
+async function sleep(ms: number): Promise<void> {
+  const actualDelay = retryDelayOverride !== null ? retryDelayOverride : ms;
+  if (actualDelay <= 0) return;
+  return new Promise((resolve) => setTimeout(resolve, actualDelay));
+}
+
+/**
+ * Clones a bare mirror of the repository and produces a complete Git bundle (.bundle)
+ * preserving all commits, branches, and tags with `git bundle create --all`.
+ */
+export async function executeGitCloneAndBundle(
+  repoFullName: string,
+  token: string | null,
+  attempt: number = 0,
+): Promise<GitBundleResult> {
+  if (mockGitRunner?.runBundle) {
+    const mockResult = await mockGitRunner.runBundle(repoFullName, token, attempt);
+    const tempDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "mock-bundle-"),
+    );
+    const bundlePath = path.join(tempDir, "backup.bundle");
+    const content = mockResult.bundleContent || Buffer.from("mock-git-bundle-content");
+    await fs.promises.writeFile(bundlePath, content);
+    return {
+      commitSha: mockResult.commitSha,
+      bundleSizeBytes: mockResult.bundleSizeBytes ?? content.length,
+      bundlePath,
+      cleanup: async () => {
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      },
+    };
+  }
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "repo-backup-"));
+  const mirrorDir = path.join(tempDir, "mirror.git");
+  const bundlePath = path.join(tempDir, "backup.bundle");
+
+  const cleanup = async () => {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  };
+
+  try {
+    const authUrl = token
+      ? `https://x-access-token:${token}@github.com/${repoFullName}.git`
+      : `https://github.com/${repoFullName}.git`;
+
+    // 1. Bare mirror clone using installation token
+    await execFileAsync("git", ["clone", "--mirror", authUrl, mirrorDir], {
+      timeout: 180000,
+    });
+
+    // 2. Standalone Git bundle with --all preserving full git history
+    await execFileAsync("git", ["bundle", "create", bundlePath, "--all"], {
+      cwd: mirrorDir,
+      timeout: 180000,
+    });
+
+    // 3. Capture latest commit SHA
+    const { stdout: headSha } = await execFileAsync(
+      "git",
+      ["rev-parse", "HEAD"],
+      { cwd: mirrorDir },
+    );
+    const commitSha = headSha.trim();
+
+    // 4. File size in bytes
+    const stat = await fs.promises.stat(bundlePath);
+    const bundleSizeBytes = stat.size;
+
+    return {
+      commitSha,
+      bundleSizeBytes,
+      bundlePath,
+      cleanup,
+    };
+  } catch (err) {
+    await cleanup();
+    throw err;
+  }
+}
+
+export interface ExecuteBackupJobParams {
+  repositoryId: string;
+  userId: string;
+  triggerType?: "manual" | "scheduled";
+}
+
+export interface ExecuteBackupJobResult {
+  success: boolean;
+  job: typeof backupJobs.$inferSelect;
+  repository?: typeof githubRepositories.$inferSelect;
+  error?: string;
+}
+
+/**
+ * Dispatches and executes an on-demand or scheduled Backup Job with automated retries.
+ */
+export async function executeBackupJob({
+  repositoryId,
+  userId,
+  triggerType = "manual",
+}: ExecuteBackupJobParams): Promise<ExecuteBackupJobResult> {
+  // 1. Verify repository and fetch associated installation
+  const [repoWithInstallation] = await db
+    .select({
+      id: githubRepositories.id,
+      userId: githubRepositories.userId,
+      installationId: githubRepositories.installationId,
+      name: githubRepositories.name,
+      fullName: githubRepositories.fullName,
+      backupEnabled: githubRepositories.backupEnabled,
+      backupSchedule: githubRepositories.backupSchedule,
+      lastBackupAt: githubRepositories.lastBackupAt,
+      lastBackupStatus: githubRepositories.lastBackupStatus,
+      githubInstallationId: githubInstallations.installationId,
+      accountLogin: githubInstallations.accountLogin,
+    })
+    .from(githubRepositories)
+    .innerJoin(
+      githubInstallations,
+      eq(githubRepositories.installationId, githubInstallations.id),
+    )
+    .where(
+      and(
+        eq(githubRepositories.id, repositoryId),
+        eq(githubRepositories.userId, userId),
+      ),
+    );
+
+  if (!repoWithInstallation) {
+    throw new Error("Repository not found or unauthorized");
+  }
+
+  if (!repoWithInstallation.backupEnabled) {
+    throw new Error("Repository is not enrolled for backups");
+  }
+
+  const bucketName = getDefaultBackupBucket();
+  const startedAt = new Date();
+
+  // 2. Record initial backup job with status = "running"
+  const [initialJob] = await db
+    .insert(backupJobs)
+    .values({
+      repositoryId: repoWithInstallation.id,
+      userId,
+      status: "running",
+      triggerType,
+      s3Bucket: bucketName,
+      retryCount: 0,
+      startedAt,
+    })
+    .returning();
+
+  // Update repository's backup status to "running"
+  await db
+    .update(githubRepositories)
+    .set({
+      lastBackupStatus: "running",
+      updatedAt: new Date(),
+    })
+    .where(eq(githubRepositories.id, repoWithInstallation.id));
+
+  // 3. Execute backup with retry policy (up to 2 retries with backoff)
+  const MAX_RETRIES = 2;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff: attempt 1 -> 300ms, attempt 2 -> 600ms (or overridden in tests)
+      await sleep(300 * attempt);
+      await db
+        .update(backupJobs)
+        .set({ retryCount: attempt })
+        .where(eq(backupJobs.id, initialJob.id));
+    }
+
+    let bundleResult: GitBundleResult | null = null;
+    try {
+      // Step A: Ensure S3 bucket exists (auto-create if missing)
+      await ensureBucketExists(bucketName);
+
+      // Step B: Obtain installation access token
+      const token = await fetchInstallationToken(
+        repoWithInstallation.githubInstallationId,
+      );
+
+      // Step C: Bare mirror clone and git bundle create
+      bundleResult = await executeGitCloneAndBundle(
+        repoWithInstallation.fullName,
+        token,
+        attempt,
+      );
+
+      // Step D: Structured S3 key
+      const parts = repoWithInstallation.fullName.split("/");
+      const owner = parts[0] || repoWithInstallation.accountLogin;
+      const repoName = parts[1] || repoWithInstallation.name;
+      const s3Key = generateBackupKey(
+        userId,
+        owner,
+        repoName,
+        bundleResult.commitSha,
+        Date.now(),
+      );
+
+      // Step E: Stream bundle to S3 with SSE-S3 encryption
+      await uploadBackupBundle({
+        bucket: bucketName,
+        key: s3Key,
+        filePath: bundleResult.bundlePath,
+        sizeBytes: bundleResult.bundleSizeBytes,
+      });
+
+      const completedAt = new Date();
+
+      // Step F: Record completed Backup Job in database
+      const [completedJob] = await db
+        .update(backupJobs)
+        .set({
+          status: "completed",
+          commitSha: bundleResult.commitSha,
+          bundleSizeBytes: bundleResult.bundleSizeBytes,
+          s3Bucket: bucketName,
+          s3Key,
+          retryCount: attempt,
+          completedAt,
+        })
+        .where(eq(backupJobs.id, initialJob.id))
+        .returning();
+
+      // Step G: Update repository last backup metadata
+      const [updatedRepo] = await db
+        .update(githubRepositories)
+        .set({
+          lastBackupAt: completedAt,
+          lastBackupStatus: "success",
+          updatedAt: new Date(),
+        })
+        .where(eq(githubRepositories.id, repoWithInstallation.id))
+        .returning();
+
+      await bundleResult.cleanup();
+
+      return {
+        success: true,
+        job: completedJob,
+        repository: updatedRepo,
+      };
+    } catch (err: unknown) {
+      if (bundleResult) {
+        await bundleResult.cleanup().catch(() => {});
+      }
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Loop continues if attempt < MAX_RETRIES
+    }
+  }
+
+  // 4. If all retries exhausted, record failed job
+  const failedAt = new Date();
+  const [failedJob] = await db
+    .update(backupJobs)
+    .set({
+      status: "failed",
+      errorMessage: lastError?.message || "Backup execution failed after retries",
+      retryCount: MAX_RETRIES,
+      completedAt: failedAt,
+    })
+    .where(eq(backupJobs.id, initialJob.id))
+    .returning();
+
+  const [failedRepo] = await db
+    .update(githubRepositories)
+    .set({
+      lastBackupStatus: "failed",
+      updatedAt: new Date(),
+    })
+    .where(eq(githubRepositories.id, repoWithInstallation.id))
+    .returning();
+
+  return {
+    success: false,
+    job: failedJob,
+    repository: failedRepo,
+    error: lastError?.message || "Backup execution failed after retries",
+  };
+}

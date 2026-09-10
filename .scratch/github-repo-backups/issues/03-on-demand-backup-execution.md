@@ -5,15 +5,15 @@ Enable users to trigger an immediate, on-demand Backup Job by clicking "Backup N
 
 **Blocked by:** 02: Enroll Repositories and Configure Backup Schedules
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each Enrolled Repository displays an on-demand "Backup Now" action button
-- [ ] Clicking "Backup Now" dispatches a backup job and displays an active loading/running state on the repository row
-- [ ] The platform automatically verifies and creates the S3 bucket if it does not already exist
-- [ ] The backup engine clones a bare mirror of the repository using a short-lived installation access token
-- [ ] The engine executes `git bundle create` with `--all` to produce a standalone `.bundle` file containing complete git history
-- [ ] The bundle is streamed to S3 with SSE-S3 encryption and structured key naming
-- [ ] The database records a completed `Backup Job` record with commit hash, file size in bytes, and execution duration
-- [ ] If a failure occurs, the engine retries up to 2 times with backoff before marking the job as failed with actionable error details
-- [ ] The UI displays updated backup status badges (Success, Failed, Running) and last backup timestamp
-- [ ] High-level tests verify backup dispatch, mock git bundle execution, S3 upload calls, and error retry behavior
+- [x] Each Enrolled Repository displays an on-demand "Backup Now" action button
+- [x] Clicking "Backup Now" dispatches a backup job and displays an active loading/running state on the repository row
+- [x] The platform automatically verifies and creates the S3 bucket if it does not already exist
+- [x] The backup engine clones a bare mirror of the repository using a short-lived installation access token
+- [x] The engine executes `git bundle create` with `--all` to produce a standalone `.bundle` file containing complete git history
+- [x] The bundle is streamed to S3 with SSE-S3 encryption and structured key naming
+- [x] The database records a completed `Backup Job` record with commit hash, file size in bytes, and execution duration
+- [x] If a failure occurs, the engine retries up to 2 times with backoff before marking the job as failed with actionable error details
+- [x] The UI displays updated backup status badges (Success, Failed, Running) and last backup timestamp
+- [x] High-level tests verify backup dispatch, mock git bundle execution, S3 upload calls, and error retry behavior

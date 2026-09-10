@@ -187,6 +187,30 @@ export default function HomePage() {
     }
   };
 
+  const handleBackupNow = async (repoId: string) => {
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`/api/repositories/${repoId}/backup`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to execute on-demand backup.");
+      }
+      setSuccessMessage(
+        `On-demand backup completed successfully! Bundle saved to S3 (${data.job.bundleSizeBytes} bytes, commit ${data.job.commitSha?.slice(0, 7)}).`,
+      );
+      await loadDashboardData();
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred while running on-demand backup.";
+      setErrorMessage(msg);
+      throw err;
+    }
+  };
+
 
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -408,6 +432,7 @@ export default function HomePage() {
                     repositories={repositories}
                     isLoading={isLoadingData}
                     onUpdateRepository={handleUpdateRepository}
+                    onBackupNow={handleBackupNow}
                   />
                 </div>
               ) : (
