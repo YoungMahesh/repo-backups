@@ -42,9 +42,6 @@ export const TopNav: React.FC<TopNavProps> = ({
           <span className="font-serif text-lg font-medium tracking-tight text-ink">
             Repo Manage
           </span>
-          <Badge variant="pill" className="hidden sm:inline-flex text-[10px] py-0.5">
-            Editorial v0.5
-          </Badge>
         </div>
       </div>
 

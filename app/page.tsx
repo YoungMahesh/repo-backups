@@ -342,14 +342,8 @@ export default function HomePage() {
             session?.user ? "max-w-5xl" : "max-w-lg mt-8"
           }`}
         >
-          {/* Editorial Headline */}
+          {/* Headline */}
           <div className="text-center space-y-2">
-            <div className="inline-flex items-center gap-2 mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              <span className="font-sans text-xs uppercase tracking-wider text-muted font-medium">
-                Anthropic Warm-Canvas Editorial
-              </span>
-            </div>
             <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink">
               {session?.user
                 ? "Repository Backup Dashboard"
@@ -706,10 +700,6 @@ export default function HomePage() {
             </Card>
           )}
 
-          {/* Footer note */}
-          <p className="text-center text-xs text-muted-soft">
-            Built with Better-Auth &bull; Styled with Warm-Canvas Editorial
-          </p>
         </div>
       </main>
     </div>

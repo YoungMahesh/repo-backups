@@ -19,9 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Repo Manage — Warm-Canvas Editorial",
+  title: "Repo Manage — GitHub Repository Backups",
   description:
-    "Repository management interface adhering to warm-canvas editorial design system.",
+    "Automated Git bundle backups for GitHub organizations.",
 };
 
 export default function RootLayout({
