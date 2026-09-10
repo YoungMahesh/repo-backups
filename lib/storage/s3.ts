@@ -4,6 +4,7 @@ import {
   CreateBucketCommand,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
   CreateBucketCommandInput,
   BucketLocationConstraint,
 } from "@aws-sdk/client-s3";
@@ -40,6 +41,10 @@ export interface MockS3Storage {
     expiresInSeconds: number;
     downloadFilename?: string;
   }>;
+  deleteCalls?: Array<{
+    bucket: string;
+    key: string;
+  }>;
   onEnsureBucket?: (bucket: string) => Promise<void>;
   onUpload?: (params: UploadBundleParams) => Promise<UploadBundleResult>;
   onGetSignedUrl?: (params: {
@@ -48,6 +53,7 @@ export interface MockS3Storage {
     expiresInSeconds: number;
     downloadFilename?: string;
   }) => Promise<string>;
+  onDelete?: (params: { bucket: string; key: string }) => Promise<void>;
 }
 
 let mockStorage: MockS3Storage | null = null;
@@ -267,5 +273,42 @@ export async function createPresignedDownloadUrl(
   });
 
   return getSignedUrl(client, command, { expiresIn });
+}
+
+export interface DeleteBundleParams {
+  bucket: string;
+  key: string;
+  client?: S3Client;
+}
+
+/**
+ * Permanently deletes a backup bundle from S3 storage using DeleteObjectCommand.
+ */
+export async function deleteBackupBundle(
+  params: DeleteBundleParams,
+  client?: S3Client,
+): Promise<void> {
+  if (mockStorage) {
+    if (!mockStorage.deleteCalls) {
+      mockStorage.deleteCalls = [];
+    }
+    mockStorage.deleteCalls.push({
+      bucket: params.bucket,
+      key: params.key,
+    });
+
+    if (mockStorage.onDelete) {
+      await mockStorage.onDelete({ bucket: params.bucket, key: params.key });
+    }
+    return;
+  }
+
+  const s3 = client || params.client || getS3Client();
+  const command = new DeleteObjectCommand({
+    Bucket: params.bucket,
+    Key: params.key,
+  });
+
+  await s3.send(command);
 }
 

@@ -350,6 +350,11 @@ export function BackupHistoryDrawer({
                           <span className="h-1.5 w-1.5 rounded-full bg-success" />
                           Completed
                         </span>
+                      ) : job.status === "pruned" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-hairline bg-surface-cream-strong/80 px-2.5 py-0.5 text-xs font-medium text-muted">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted" />
+                          Pruned
+                        </span>
                       ) : job.status === "failed" ? (
                         <span className="inline-flex items-center gap-1 rounded-full border border-error/30 bg-error/15 px-2.5 py-0.5 text-xs font-medium text-error">
                           <span className="h-1.5 w-1.5 rounded-full bg-error" />
@@ -412,6 +417,11 @@ export function BackupHistoryDrawer({
 
                     {/* Actions: Download / Restore Guide / Retry */}
                     <div className="flex items-center justify-end gap-2 pt-1">
+                      {job.status === "pruned" && (
+                        <span className="font-sans text-[11px] text-muted-soft italic">
+                          Bundle object removed per rolling retention limit (10)
+                        </span>
+                      )}
                       {job.status === "completed" && (
                         <>
                           <button

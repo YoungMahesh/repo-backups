@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, count } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { githubRepositories } from "@/db/schema";
+import { githubRepositories, backupJobs } from "@/db/schema";
+import { getNextBackupTime } from "@/lib/backup/scheduler";
 
 const VALID_SCHEDULES = ["daily", "weekly", "manual"] as const;
 type BackupSchedule = (typeof VALID_SCHEDULES)[number];
@@ -41,7 +42,26 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ repository: repo });
+  const [countResult] = await db
+    .select({ count: count(backupJobs.id) })
+    .from(backupJobs)
+    .where(
+      and(
+        eq(backupJobs.repositoryId, id),
+        eq(backupJobs.status, "completed"),
+      ),
+    );
+
+  const retentionCount = countResult ? Number(countResult.count) : 0;
+  const nextBackup = getNextBackupTime(repo);
+
+  return NextResponse.json({
+    repository: {
+      ...repo,
+      retentionCount,
+      nextBackupAt: nextBackup ? nextBackup.toISOString() : null,
+    },
+  });
 }
 
 export async function PATCH(

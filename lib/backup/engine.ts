@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
@@ -12,6 +12,7 @@ import {
   generateBackupKey,
   getDefaultBackupBucket,
   uploadBackupBundle,
+  deleteBackupBundle,
 } from "@/lib/storage/s3";
 
 const execFileAsync = promisify(execFile);
@@ -294,6 +295,16 @@ export async function executeBackupJob({
 
       await bundleResult.cleanup();
 
+      // Step H: Enforce rolling Retention Window (prune oldest excess bundles beyond 10)
+      try {
+        await pruneRetentionWindow(repoWithInstallation.id);
+      } catch (pruneErr) {
+        console.error(
+          `Retention pruning failed for repo ${repoWithInstallation.id}:`,
+          pruneErr,
+        );
+      }
+
       return {
         success: true,
         job: completedJob,
@@ -335,5 +346,84 @@ export async function executeBackupJob({
     job: failedJob,
     repository: failedRepo,
     error: lastError?.message || "Backup execution failed after retries",
+  };
+}
+
+export const MAX_RETENTION_BUNDLES = 10;
+
+export interface PruneRetentionResult {
+  totalCompleted: number;
+  prunedCount: number;
+  prunedJobs: Array<{ id: string; s3Key: string | null }>;
+}
+
+/**
+ * Enforces the rolling Retention Window limit for a repository.
+ * If total completed Backup Bundles exceed the limit (10), the oldest excess S3 objects
+ * are permanently deleted via DeleteObjectCommand, and the database records are updated
+ * to status = "pruned" to reflect their deletion.
+ */
+export async function pruneRetentionWindow(
+  repositoryId: string,
+  limit: number = MAX_RETENTION_BUNDLES,
+): Promise<PruneRetentionResult> {
+  // Query all completed backup jobs for this repository, ordered newest first
+  const completed = await db
+    .select({
+      id: backupJobs.id,
+      s3Bucket: backupJobs.s3Bucket,
+      s3Key: backupJobs.s3Key,
+      completedAt: backupJobs.completedAt,
+      createdAt: backupJobs.createdAt,
+    })
+    .from(backupJobs)
+    .where(
+      and(
+        eq(backupJobs.repositoryId, repositoryId),
+        eq(backupJobs.status, "completed"),
+      ),
+    )
+    .orderBy(desc(backupJobs.completedAt), desc(backupJobs.createdAt));
+
+  if (completed.length <= limit) {
+    return {
+      totalCompleted: completed.length,
+      prunedCount: 0,
+      prunedJobs: [],
+    };
+  }
+
+  // Excess jobs are the oldest beyond the retention limit
+  const excessJobs = completed.slice(limit);
+  const prunedJobs: Array<{ id: string; s3Key: string | null }> = [];
+
+  for (const job of excessJobs) {
+    // Permanently delete from S3 if bucket and key are present
+    if (job.s3Bucket && job.s3Key) {
+      try {
+        await deleteBackupBundle({
+          bucket: job.s3Bucket,
+          key: job.s3Key,
+        });
+      } catch (s3Err) {
+        console.error(`Failed to delete S3 object for job ${job.id}:`, s3Err);
+      }
+    }
+
+    // Update database record to status = "pruned" to reflect deletion
+    await db
+      .update(backupJobs)
+      .set({
+        status: "pruned",
+      })
+      .where(eq(backupJobs.id, job.id));
+
+    prunedJobs.push({ id: job.id, s3Key: job.s3Key });
+  }
+
+  return {
+    totalCompleted: completed.length,
+    prunedCount: prunedJobs.length,
+    prunedJobs,
   };
 }

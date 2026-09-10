@@ -19,6 +19,8 @@ export interface RepositoryItem {
   lastBackupStatus?: string | null;
   accountLogin?: string;
   createdAt?: string | Date;
+  retentionCount?: number;
+  nextBackupAt?: string | Date | null;
 }
 
 interface RepositoryInventoryTableProps {
@@ -49,6 +51,38 @@ function formatBackupDate(date: string | Date): string {
   } catch {
     return String(date);
   }
+}
+
+export function computeNextRunText(
+  isEnrolled: boolean,
+  schedule: string,
+  lastBackupAt?: string | Date | null,
+  providedNextBackupAt?: string | Date | null,
+): string {
+  if (!isEnrolled) return "—";
+  if (schedule === "manual") return "Manual only";
+
+  if (providedNextBackupAt) {
+    const nextDate = new Date(providedNextBackupAt);
+    if (!isNaN(nextDate.getTime())) {
+      if (Date.now() >= nextDate.getTime()) {
+        return "Due now";
+      }
+      return formatBackupDate(nextDate);
+    }
+  }
+
+  if (!lastBackupAt) return "Due now";
+  const lastTime = new Date(lastBackupAt).getTime();
+  if (isNaN(lastTime)) return "Due now";
+
+  const intervalMs =
+    schedule === "daily" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+  const nextTime = lastTime + intervalMs;
+  if (Date.now() >= nextTime) {
+    return "Due now";
+  }
+  return formatBackupDate(new Date(nextTime));
 }
 
 export function RepositoryInventoryTable({
@@ -299,6 +333,9 @@ export function RepositoryInventoryTable({
                   Backup Status
                 </th>
                 <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted">
+                  Retention
+                </th>
+                <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted">
                   Schedule
                 </th>
                 <th className="py-2.5 px-4 font-sans text-xs font-medium uppercase tracking-wider text-muted text-right">
@@ -408,7 +445,7 @@ export function RepositoryInventoryTable({
                       </div>
                     </td>
 
-                    {/* Backup Status / Enrolled Distinction / Timestamp */}
+                    {/* Backup Status / Enrolled Distinction / Timestamp / Next Run */}
                     <td className="py-3 px-4">
                       {isEnrolled ? (
                         <div className="flex flex-col gap-1">
@@ -447,16 +484,46 @@ export function RepositoryInventoryTable({
                               </span>
                             )}
                           </div>
-                          <span className="font-sans text-[11px] text-muted-soft">
-                            {currentLastBackupAt
-                              ? `Last: ${formatBackupDate(currentLastBackupAt)}`
-                              : "Never backed up"}
-                          </span>
+                          <div className="flex flex-col gap-0.5 mt-0.5">
+                            <span className="font-sans text-[11px] text-muted-soft">
+                              {currentLastBackupAt
+                                ? `Last: ${formatBackupDate(currentLastBackupAt)}`
+                                : "Never backed up"}
+                            </span>
+                            <span
+                              className="font-sans text-[11px] text-muted font-medium"
+                              data-testid={`next-run-${repo.name}`}
+                            >
+                              Next: {computeNextRunText(isEnrolled, currentSchedule, currentLastBackupAt, repo.nextBackupAt)}
+                            </span>
+                          </div>
                         </div>
                       ) : (
                         <span className="inline-flex items-center rounded-full border border-hairline/60 bg-surface-soft px-2.5 py-0.5 text-xs font-medium text-muted">
                           Inactive
                         </span>
+                      )}
+                    </td>
+
+                    {/* Retention Window Count */}
+                    <td className="py-3 px-4">
+                      {isEnrolled ? (
+                        <div
+                          className="flex flex-col gap-0.5"
+                          data-testid={`retention-container-${repo.name}`}
+                        >
+                          <span
+                            className="font-sans text-xs font-semibold text-ink"
+                            data-testid={`retention-count-${repo.name}`}
+                          >
+                            {`${repo.retentionCount ?? 0} / 10`}
+                          </span>
+                          <span className="font-sans text-[10px] uppercase tracking-wider text-muted-soft font-medium">
+                            Bundles
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="font-sans text-xs text-muted-soft">—</span>
                       )}
                     </td>
 

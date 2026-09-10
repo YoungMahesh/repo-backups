@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and, count } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { githubRepositories, githubInstallations } from "@/db/schema";
+import { githubRepositories, githubInstallations, backupJobs } from "@/db/schema";
+import { getNextBackupTime } from "@/lib/backup/scheduler";
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -47,10 +48,39 @@ export async function GET(request: NextRequest) {
 
   const repositories = await query;
 
+  // Compute retention count (completed backup bundles) for each repository
+  const retentionCounts = await db
+    .select({
+      repositoryId: backupJobs.repositoryId,
+      count: count(backupJobs.id),
+    })
+    .from(backupJobs)
+    .where(
+      and(
+        eq(backupJobs.userId, userId),
+        eq(backupJobs.status, "completed"),
+      ),
+    )
+    .groupBy(backupJobs.repositoryId);
+
+  const retentionMap = new Map<string, number>();
+  for (const item of retentionCounts) {
+    retentionMap.set(item.repositoryId, Number(item.count));
+  }
+
+  const enrichedRepositories = repositories.map((repo) => {
+    const nextBackup = getNextBackupTime(repo);
+    return {
+      ...repo,
+      retentionCount: retentionMap.get(repo.id) || 0,
+      nextBackupAt: nextBackup ? nextBackup.toISOString() : null,
+    };
+  });
+
   return NextResponse.json({
     repositories: installationId
-      ? repositories.filter((r) => r.installationId === installationId)
-      : repositories,
+      ? enrichedRepositories.filter((r) => r.installationId === installationId)
+      : enrichedRepositories,
   });
 }
 

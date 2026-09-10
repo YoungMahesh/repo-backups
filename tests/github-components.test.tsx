@@ -221,6 +221,32 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       expect(html).toContain("data-testid=\"view-history-btn-docs-site\"");
       expect(html).toContain("cursor-pointer");
     });
+
+    it("renders next scheduled run time and retention count indicators per repository", () => {
+      const reposWithRetention = [
+        {
+          ...mockRepositories[1],
+          id: "repo-retention-test",
+          name: "retention-tested-repo",
+          fullName: "acme-corp/retention-tested-repo",
+          backupEnabled: true,
+          backupSchedule: "daily",
+          retentionCount: 7,
+          lastBackupAt: new Date("2026-09-10T10:00:00Z"),
+          nextBackupAt: new Date("2026-09-11T10:00:00Z"),
+        },
+      ];
+
+      const html = renderToString(
+        <RepositoryInventoryTable repositories={reposWithRetention} />,
+      );
+
+      expect(html).toContain("Next:");
+      expect(html).toContain("data-testid=\"next-run-retention-tested-repo\"");
+      expect(html).toContain("7 / 10");
+      expect(html).toContain("data-testid=\"retention-count-retention-tested-repo\"");
+      expect(html).toContain("Retention");
+    });
   });
 
   describe("RestorationGuideModal (Warm-Canvas Editorial)", () => {
@@ -368,6 +394,32 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       expect(html).toContain("bg-canvas");
       expect(html).toContain("border-hairline");
       expect(html).toContain("font-serif");
+    });
+
+    it("renders pruned badge and retention policy note for pruned backup jobs", () => {
+      const prunedJob = {
+        id: "job-pruned-1",
+        repositoryId: "repo-1",
+        userId: "user-1",
+        status: "pruned",
+        triggerType: "scheduled",
+        commitSha: "prunedcommit1234567890abcdef1234567890",
+        bundleSizeBytes: 2048,
+        createdAt: new Date("2026-09-08T12:00:00Z"),
+      };
+
+      const html = renderToString(
+        <BackupHistoryDrawer
+          isOpen={true}
+          onClose={() => {}}
+          repository={mockRepo}
+          initialJobs={[prunedJob]}
+        />,
+      );
+
+      expect(html).toContain("Pruned");
+      expect(html).toContain("Bundle object removed per rolling retention limit");
+      expect(html).not.toContain("data-testid=\"download-backup-btn-job-pruned-1\"");
     });
 
     it("renders empty state message when there are no backup jobs", () => {
