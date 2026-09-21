@@ -1,6 +1,6 @@
 {
   "name": "repo-manage",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "dotenvx run -- next dev",
@@ -37,6 +37,9 @@
     "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": "24.21.0"
   },
   "packageManager": "pnpm@10.31.0"
 }

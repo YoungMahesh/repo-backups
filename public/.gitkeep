@@ -1,0 +1,1 @@
+# public directory is empty but needed in dockerfile, hence created and made public directory part of repository using this file

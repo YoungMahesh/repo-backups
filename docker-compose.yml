@@ -1,0 +1,19 @@
+services:
+  sRepoManage:
+    image: repo-manage:0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # always build the image locally and skip remote registry pull attempts
+    pull_policy: build
+    container_name: cRepoManage
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    networks:
+      - repo-manage_net
+
+networks:
+  repo-manage_net:
+    name: repo-manage_net
+    driver: bridge
