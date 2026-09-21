@@ -182,6 +182,44 @@ describe("GitHub High-Level Route Handlers", () => {
       expect(savedRepos.map((r) => r.name)).toContain("web-app");
       expect(savedRepos.map((r) => r.name)).toContain("docs");
     });
+
+    it("redirects to forwarded host from proxy when not requesting JSON", async () => {
+      const validState = signState(TEST_USER_ID);
+      const req = new NextRequest(
+        `http://0.0.0.0:3000/api/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${validState}`,
+        {
+          headers: {
+            "x-forwarded-host": "repo-manage.example.com",
+            "x-forwarded-proto": "https",
+          },
+        },
+      );
+      const res = await callbackHandler(req);
+
+      expect(res.status).toBe(307);
+      const location = res.headers.get("location");
+      expect(location).toBe(
+        "https://repo-manage.example.com/?connected=success&org=octo-org",
+      );
+    });
+
+    it("redirects errors to forwarded host without 0.0.0.0", async () => {
+      const req = new NextRequest(
+        "http://0.0.0.0:3000/api/github/callback?installation_id=invalid&state=invalid",
+        {
+          headers: {
+            "x-forwarded-host": "repo-manage.example.com",
+            "x-forwarded-proto": "https",
+          },
+        },
+      );
+      const res = await callbackHandler(req);
+
+      expect(res.status).toBe(307);
+      const location = res.headers.get("location");
+      expect(location).toContain("https://repo-manage.example.com/?error=");
+      expect(location).not.toContain("0.0.0.0");
+    });
   });
 
   describe("POST /api/github/sync", () => {

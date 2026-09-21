@@ -7,6 +7,35 @@ import {
   fetchInstallationRepositories,
 } from "@/lib/github/client";
 
+function getRedirectBaseUrl(request: NextRequest): URL {
+  const host =
+    request.headers.get("x-forwarded-host") ||
+    request.headers.get("host");
+
+  const proto =
+    request.headers.get("x-forwarded-proto") ||
+    (request.url.startsWith("https") ? "https" : "http");
+
+  if (host && !host.startsWith("0.0.0.0")) {
+    return new URL("/", `${proto}://${host}`);
+  }
+
+  if (process.env.BETTER_AUTH_URL) {
+    return new URL("/", process.env.BETTER_AUTH_URL);
+  }
+
+  try {
+    const parsed = new URL(request.url);
+    if (parsed.hostname !== "0.0.0.0") {
+      return new URL("/", parsed.origin);
+    }
+  } catch {
+    // Ignore URL parse errors and fall through
+  }
+
+  return new URL("/", "http://localhost:3000");
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const installationIdParam = searchParams.get("installation_id");
@@ -22,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (wantsJson) {
       return NextResponse.json({ error }, { status: 400 });
     }
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = getRedirectBaseUrl(request);
     redirectUrl.searchParams.set("error", error);
     return NextResponse.redirect(redirectUrl);
   }
@@ -32,7 +61,7 @@ export async function GET(request: NextRequest) {
     if (wantsJson) {
       return NextResponse.json({ error }, { status: 400 });
     }
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = getRedirectBaseUrl(request);
     redirectUrl.searchParams.set("error", error);
     return NextResponse.redirect(redirectUrl);
   }
@@ -43,7 +72,7 @@ export async function GET(request: NextRequest) {
     if (wantsJson) {
       return NextResponse.json({ error }, { status: 400 });
     }
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = getRedirectBaseUrl(request);
     redirectUrl.searchParams.set("error", error);
     return NextResponse.redirect(redirectUrl);
   }
@@ -114,7 +143,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = getRedirectBaseUrl(request);
     redirectUrl.searchParams.set("connected", "success");
     redirectUrl.searchParams.set("org", details.account.login);
     return NextResponse.redirect(redirectUrl);
@@ -124,7 +153,7 @@ export async function GET(request: NextRequest) {
     if (wantsJson) {
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
-    const redirectUrl = new URL("/", request.url);
+    const redirectUrl = getRedirectBaseUrl(request);
     redirectUrl.searchParams.set("error", errorMsg);
     return NextResponse.redirect(redirectUrl);
   }
