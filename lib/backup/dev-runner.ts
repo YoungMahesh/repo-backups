@@ -36,8 +36,21 @@ export function startLocalDevCronRunner(
       if (summary.dueCount > 0) {
         console.log(
           `[LocalDevCronRunner] Processed ${summary.processedCount} scheduled backup(s):`,
-          summary.results.map((r) => `${r.fullName}: ${r.success ? "success" : "failed"}`).join(", "),
+          summary.results
+            .map(
+              (r) =>
+                `${r.fullName}: ${r.success ? "success" : `failed (${r.error || "unknown error"})`}`,
+            )
+            .join(", "),
         );
+        for (const r of summary.results) {
+          if (!r.success) {
+            console.error(
+              `[LocalDevCronRunner] Scheduled backup failed for ${r.fullName}:`,
+              r.error,
+            );
+          }
+        }
       }
     } catch (err) {
       console.error("[LocalDevCronRunner] Error during scheduled backup execution:", err);

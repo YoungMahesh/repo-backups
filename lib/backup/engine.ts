@@ -13,6 +13,7 @@ import {
   getDefaultBackupBucket,
   uploadBackupBundle,
   deleteBackupBundle,
+  formatErrorMessage,
 } from "@/lib/storage/s3";
 
 const execFileAsync = promisify(execFile);
@@ -357,6 +358,10 @@ export async function executeBackupJob({
         await bundleResult.cleanup().catch(() => {});
       }
       lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[BackupEngine] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed for ${repoWithInstallation.fullName}:`,
+        err,
+      );
       // Loop continues if attempt < MAX_RETRIES
     }
   }
@@ -376,11 +381,17 @@ export async function executeBackupJob({
 
   // 4. If all retries exhausted, record failed job
   const failedAt = new Date();
+  const formattedError =
+    formatErrorMessage(lastError) || "Backup execution failed after retries";
+  console.error(
+    `[BackupEngine] All backup retries exhausted for ${repoWithInstallation.fullName}:`,
+    lastError,
+  );
   const [failedJob] = await db
     .update(backupJobs)
     .set({
       status: "failed",
-      errorMessage: lastError?.message || "Backup execution failed after retries",
+      errorMessage: formattedError,
       retryCount: MAX_RETRIES,
       completedAt: failedAt,
     })
@@ -400,7 +411,7 @@ export async function executeBackupJob({
     success: false,
     job: failedJob,
     repository: failedRepo,
-    error: lastError?.message || "Backup execution failed after retries",
+    error: formattedError,
   };
   } finally {
     activeJobControllers.delete(initialJob.id);

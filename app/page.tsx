@@ -294,6 +294,7 @@ export default function HomePage() {
       );
       await loadDashboardData();
     } catch (err) {
+      console.error(`Failed to execute backup for repository ${repoId}:`, err);
       const msg =
         err instanceof Error
           ? err.message

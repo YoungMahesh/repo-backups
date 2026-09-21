@@ -57,6 +57,10 @@ export async function POST(
     });
 
     if (!result.success) {
+      console.error(
+        `[BackupAPI] Backup execution failed for repository ${id}:`,
+        result.error,
+      );
       return NextResponse.json(
         {
           success: false,
@@ -74,6 +78,10 @@ export async function POST(
       repository: result.repository,
     });
   } catch (err: unknown) {
+    console.error(
+      `[BackupAPI] Unexpected error in backup route for repository ${id}:`,
+      err,
+    );
     const message =
       err instanceof Error ? err.message : "Internal backup error";
     return NextResponse.json(

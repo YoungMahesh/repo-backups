@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { githubRepositories, githubInstallations } from "@/db/schema";
 import { executeBackupJob, ExecuteBackupJobResult } from "@/lib/backup/engine";
+import { formatErrorMessage } from "@/lib/storage/s3";
 
 export const DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const WEEKLY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -169,7 +170,11 @@ export async function runScheduledBackups(options?: {
         error: outcome.error,
       });
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[Scheduler] Error running scheduled backup for ${repo.fullName}:`,
+        err,
+      );
+      const errorMsg = formatErrorMessage(err);
       results.push({
         repositoryId: repo.id,
         fullName: repo.fullName,
