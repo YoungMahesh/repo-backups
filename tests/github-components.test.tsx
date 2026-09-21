@@ -32,6 +32,8 @@ describe("GitHub UI Components (Warm-Canvas Editorial)", () => {
       expect(html).toContain("4 authorized repositories");
       expect(html).toContain("Sync from GitHub");
       expect(html).toContain("Manage Permissions");
+      expect(html).toContain("Disconnect");
+      expect(html).toContain("data-testid=\"disconnect-button\"");
       expect(html).toContain("bg-surface-card");
       expect(html).toContain("border-hairline");
     });

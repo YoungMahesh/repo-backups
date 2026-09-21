@@ -18,6 +18,8 @@ export const githubInstallations = pgTable(
     accountType: text("account_type").notNull(), // "Organization" | "User"
     avatarUrl: text("avatar_url"),
     targetType: text("target_type").notNull(), // "selected" | "all"
+    status: text("status").notNull().default("active"), // "active" | "disconnected" | "suspended"
+    disconnectedAt: timestamp("disconnected_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

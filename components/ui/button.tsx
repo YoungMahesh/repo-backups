@@ -5,7 +5,9 @@ export type ButtonVariant =
   | "secondary"
   | "secondary-on-dark"
   | "text-link"
-  | "icon-circular";
+  | "icon-circular"
+  | "destructive"
+  | "destructive-primary";
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -39,6 +41,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         "bg-transparent text-ink hover:text-primary active:text-primary-active p-0 h-auto underline-offset-4 hover:underline disabled:opacity-50",
       "icon-circular":
         "h-9 w-9 rounded-full bg-canvas text-ink border border-hairline hover:bg-surface-soft active:bg-surface-card disabled:opacity-50",
+      destructive:
+        "h-10 px-5 rounded-md bg-canvas text-error border border-error/30 hover:bg-error/10 active:bg-error/20 focus-visible:outline-error disabled:opacity-50",
+      "destructive-primary":
+        "h-10 px-5 rounded-md bg-error text-white hover:bg-error/90 active:bg-error/80 focus-visible:outline-error disabled:opacity-50 disabled:bg-error/40",
     };
 
     return (

@@ -28,6 +28,8 @@ export interface MockGitHubData {
   installation?: GitHubInstallation;
   repositories?: GitHubRepository[];
   installationToken?: string | null;
+  deleteInstallation?: (installationId: number) => Promise<boolean | void> | boolean | void;
+  deleteInstallationError?: Error;
 }
 
 let mockClientData: MockGitHubData | null = null;
@@ -251,3 +253,63 @@ export async function fetchInstallationRepositories(
   const data = (await response.json()) as { repositories: GitHubRepository[] };
   return data.repositories || [];
 }
+
+export interface DeleteInstallationResult {
+  success: boolean;
+  alreadyDeleted?: boolean;
+}
+
+/**
+ * Deletes a GitHub App Installation via GitHub REST API (DELETE /app/installations/{installation_id}).
+ * Uses an RS256 JWT for app-level authentication.
+ * Treats 204 No Content as success, and 404 Not Found as remote success (already deleted on GitHub).
+ */
+export async function deleteInstallation(
+  installationId: number,
+): Promise<DeleteInstallationResult> {
+  if (mockClientData?.deleteInstallationError) {
+    throw mockClientData.deleteInstallationError;
+  }
+  if (mockClientData?.deleteInstallation) {
+    await mockClientData.deleteInstallation(installationId);
+    return { success: true };
+  }
+  if (mockClientData) {
+    return { success: true };
+  }
+
+  const jwt = generateGitHubAppJwt();
+  if (!jwt) {
+    // Fallback development mock if no credentials configured
+    return { success: true };
+  }
+
+  const response = await fetch(
+    `https://api.github.com/app/installations/${installationId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "repo-manage-backup-app",
+      },
+    },
+  );
+
+  if (response.status === 204) {
+    return { success: true };
+  }
+
+  if (response.status === 404) {
+    return { success: true, alreadyDeleted: true };
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to delete installation from GitHub: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return { success: true };
+}
+

@@ -1,4 +1,4 @@
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
@@ -38,6 +38,7 @@ export interface MockGitRunner {
 
 let mockGitRunner: MockGitRunner | null = null;
 let retryDelayOverride: number | null = null;
+const activeJobControllers = new Map<string, AbortController>();
 
 export function setMockGitRunner(runner: MockGitRunner | null) {
   mockGitRunner = runner;
@@ -65,6 +66,7 @@ export async function executeGitCloneAndBundle(
   repoFullName: string,
   token: string | null,
   attempt: number = 0,
+  signal?: AbortSignal,
 ): Promise<GitBundleResult> {
   if (mockGitRunner?.runBundle) {
     const mockResult = await mockGitRunner.runBundle(repoFullName, token, attempt);
@@ -100,19 +102,21 @@ export async function executeGitCloneAndBundle(
     // 1. Bare mirror clone using installation token
     await execFileAsync("git", ["clone", "--mirror", authUrl, mirrorDir], {
       timeout: 180000,
+      signal,
     });
 
     // 2. Standalone Git bundle with --all preserving full git history
     await execFileAsync("git", ["bundle", "create", bundlePath, "--all"], {
       cwd: mirrorDir,
       timeout: 180000,
+      signal,
     });
 
     // 3. Capture latest commit SHA
     const { stdout: headSha } = await execFileAsync(
       "git",
       ["rev-parse", "HEAD"],
-      { cwd: mirrorDir },
+      { cwd: mirrorDir, signal },
     );
     const commitSha = headSha.trim();
 
@@ -217,45 +221,60 @@ export async function executeBackupJob({
   // 3. Execute backup with retry policy (up to 2 retries with backoff)
   const MAX_RETRIES = 2;
   let lastError: Error | null = null;
+  const abortController = new AbortController();
+  activeJobControllers.set(initialJob.id, abortController);
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      // Exponential backoff: attempt 1 -> 300ms, attempt 2 -> 600ms (or overridden in tests)
-      await sleep(300 * attempt);
-      await db
-        .update(backupJobs)
-        .set({ retryCount: attempt })
-        .where(eq(backupJobs.id, initialJob.id));
-    }
+  try {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (abortController.signal.aborted) {
+        break;
+      }
+      if (attempt > 0) {
+        // Exponential backoff: attempt 1 -> 300ms, attempt 2 -> 600ms (or overridden in tests)
+        await sleep(300 * attempt);
+        if (abortController.signal.aborted) {
+          break;
+        }
+        await db
+          .update(backupJobs)
+          .set({ retryCount: attempt })
+          .where(eq(backupJobs.id, initialJob.id));
+      }
 
-    let bundleResult: GitBundleResult | null = null;
-    try {
-      // Step A: Ensure S3 bucket exists (auto-create if missing)
-      await ensureBucketExists(bucketName);
+      let bundleResult: GitBundleResult | null = null;
+      try {
+        // Step A: Ensure S3 bucket exists (auto-create if missing)
+        await ensureBucketExists(bucketName);
 
-      // Step B: Obtain installation access token
-      const token = await fetchInstallationToken(
-        repoWithInstallation.githubInstallationId,
-      );
+        // Step B: Obtain installation access token
+        const token = await fetchInstallationToken(
+          repoWithInstallation.githubInstallationId,
+        );
 
-      // Step C: Bare mirror clone and git bundle create
-      bundleResult = await executeGitCloneAndBundle(
-        repoWithInstallation.fullName,
-        token,
-        attempt,
-      );
+        // Step C: Bare mirror clone and git bundle create
+        bundleResult = await executeGitCloneAndBundle(
+          repoWithInstallation.fullName,
+          token,
+          attempt,
+          abortController.signal,
+        );
 
-      // Step D: Structured S3 key
-      const parts = repoWithInstallation.fullName.split("/");
-      const owner = parts[0] || repoWithInstallation.accountLogin;
-      const repoName = parts[1] || repoWithInstallation.name;
-      const s3Key = generateBackupKey(
-        userId,
-        owner,
-        repoName,
-        bundleResult.commitSha,
-        Date.now(),
-      );
+        if (abortController.signal.aborted) {
+          await bundleResult.cleanup().catch(() => {});
+          break;
+        }
+
+        // Step D: Structured S3 key
+        const parts = repoWithInstallation.fullName.split("/");
+        const owner = parts[0] || repoWithInstallation.accountLogin;
+        const repoName = parts[1] || repoWithInstallation.name;
+        const s3Key = generateBackupKey(
+          userId,
+          owner,
+          repoName,
+          bundleResult.commitSha,
+          Date.now(),
+        );
 
       // Step E: Stream bundle to S3 with SSE-S3 encryption
       await uploadBackupBundle({
@@ -264,6 +283,29 @@ export async function executeBackupJob({
         filePath: bundleResult.bundlePath,
         sizeBytes: bundleResult.bundleSizeBytes,
       });
+
+      if (abortController.signal.aborted) {
+        await bundleResult.cleanup().catch(() => {});
+        break;
+      }
+
+      // Check if job was cancelled in DB by disconnection
+      const [statusCheck] = await db
+        .select({ status: backupJobs.status, errorMessage: backupJobs.errorMessage })
+        .from(backupJobs)
+        .where(eq(backupJobs.id, initialJob.id));
+      if (statusCheck?.status === "failed" && statusCheck.errorMessage === "Installation disconnected by user") {
+        await bundleResult.cleanup().catch(() => {});
+        const [cancelledJob] = await db
+          .select()
+          .from(backupJobs)
+          .where(eq(backupJobs.id, initialJob.id));
+        return {
+          success: false,
+          job: cancelledJob || initialJob,
+          error: "Installation disconnected by user",
+        };
+      }
 
       const completedAt = new Date();
 
@@ -319,6 +361,19 @@ export async function executeBackupJob({
     }
   }
 
+  // Check if job was cancelled in DB by disconnection during failure/abort
+  const [cancelledCheck] = await db
+    .select()
+    .from(backupJobs)
+    .where(eq(backupJobs.id, initialJob.id));
+  if (cancelledCheck?.status === "failed" && cancelledCheck.errorMessage === "Installation disconnected by user") {
+    return {
+      success: false,
+      job: cancelledCheck,
+      error: "Installation disconnected by user",
+    };
+  }
+
   // 4. If all retries exhausted, record failed job
   const failedAt = new Date();
   const [failedJob] = await db
@@ -346,6 +401,95 @@ export async function executeBackupJob({
     job: failedJob,
     repository: failedRepo,
     error: lastError?.message || "Backup execution failed after retries",
+  };
+  } finally {
+    activeJobControllers.delete(initialJob.id);
+  }
+}
+
+export interface CancelInFlightJobsResult {
+  cancelledJobsCount: number;
+  cancelledJobIds: string[];
+}
+
+/**
+ * Aborts any in-flight running backup jobs belonging to repositories under the specified installation.
+ * Transitions their database status to "failed" with errorMessage "Installation disconnected by user".
+ */
+export async function cancelInFlightJobsForInstallation(
+  installationId: string,
+): Promise<CancelInFlightJobsResult> {
+  const repos = await db
+    .select({ id: githubRepositories.id })
+    .from(githubRepositories)
+    .where(eq(githubRepositories.installationId, installationId));
+
+  if (repos.length === 0) {
+    return { cancelledJobsCount: 0, cancelledJobIds: [] };
+  }
+
+  const repoIds = repos.map((r) => r.id);
+
+  const runningJobs = await db
+    .select({ id: backupJobs.id })
+    .from(backupJobs)
+    .where(
+      and(
+        inArray(backupJobs.repositoryId, repoIds),
+        eq(backupJobs.status, "running"),
+      ),
+    );
+
+  if (runningJobs.length === 0) {
+    return { cancelledJobsCount: 0, cancelledJobIds: [] };
+  }
+
+  const runningJobIds = runningJobs.map((j) => j.id);
+
+  // Abort any active in-process abort controllers
+  for (const jobId of runningJobIds) {
+    const controller = activeJobControllers.get(jobId);
+    if (controller) {
+      try {
+        controller.abort();
+      } catch (err) {
+        console.warn(`Failed to signal abort for job ${jobId}:`, err);
+      }
+    }
+  }
+
+  const cancelledAt = new Date();
+  const updatedJobs = await db
+    .update(backupJobs)
+    .set({
+      status: "failed",
+      errorMessage: "Installation disconnected by user",
+      completedAt: cancelledAt,
+    })
+    .where(
+      and(
+        inArray(backupJobs.repositoryId, repoIds),
+        eq(backupJobs.status, "running"),
+      ),
+    )
+    .returning();
+
+  await db
+    .update(githubRepositories)
+    .set({
+      lastBackupStatus: "failed",
+      updatedAt: cancelledAt,
+    })
+    .where(
+      and(
+        inArray(githubRepositories.id, repoIds),
+        eq(githubRepositories.lastBackupStatus, "running"),
+      ),
+    );
+
+  return {
+    cancelledJobsCount: updatedJobs.length,
+    cancelledJobIds: updatedJobs.map((j) => j.id),
   };
 }
 

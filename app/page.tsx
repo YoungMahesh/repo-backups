@@ -41,6 +41,7 @@ export default function HomePage() {
   const [repositories, setRepositories] = useState<RepositoryItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDisconnectingId, setIsDisconnectingId] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<GitHubAppConfigStatus | null>(null);
 
   const checkSetupStatus = useCallback(async () => {
@@ -176,6 +177,33 @@ export default function HomePage() {
       );
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleDisconnect = async (inst: ConnectedInstallation) => {
+    setIsDisconnectingId(inst.id);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`/api/installations/${inst.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || "Failed to disconnect installation");
+      } else {
+        setSuccessMessage(
+          `Successfully disconnected "${inst.accountLogin}". Historical backup bundles in S3 have been preserved.`,
+        );
+        await loadDashboardData();
+      }
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred during disconnection.",
+      );
+    } finally {
+      setIsDisconnectingId(null);
     }
   };
 
@@ -446,6 +474,8 @@ export default function HomePage() {
                         installation={inst}
                         onSync={handleSync}
                         isSyncing={isSyncing}
+                        onDisconnect={handleDisconnect}
+                        isDisconnecting={isDisconnectingId === inst.id}
                       />
                     ))}
                   </div>
