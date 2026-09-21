@@ -5,11 +5,11 @@ Users can inspect and restore preserved historical backups from disconnected ins
 
 **Blocked by:** 01: User-Initiated Disconnection with Confirmation Modal & Remote GitHub Revocation
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `GET /api/installations` endpoint supports a `status` query filter (`active` | `disconnected` | `all`), defaulting to `active` to keep active dashboard queries focused.
-- [ ] Active dashboard filters out disconnected installations and hides their repositories from the active repository inventory table.
-- [ ] A dedicated `ArchivedBackupsSection` component renders at the bottom of the dashboard in a subtle, collapsible card adhering to the warm-canvas design system (`DESIGN.md`).
-- [ ] The archived view displays disconnected account identity, disconnection date, repository list, and count of preserved backup bundles.
-- [ ] Users can click a repository in the archived view to open the Backup History drawer, generate 15-minute temporary pre-signed S3 download links, and view the Restoration Guide modal.
-- [ ] Automated tests verify filtering on the installations API and component rendering/interaction for the archived backups view.
+- [x] `GET /api/installations` endpoint supports a `status` query filter (`active` | `disconnected` | `all`), defaulting to `active` to keep active dashboard queries focused.
+- [x] Active dashboard filters out disconnected installations and hides their repositories from the active repository inventory table.
+- [x] A dedicated `ArchivedBackupsSection` component renders at the bottom of the dashboard in a subtle, collapsible card adhering to the warm-canvas design system (`DESIGN.md`).
+- [x] The archived view displays disconnected account identity, disconnection date, repository list, and count of preserved backup bundles.
+- [x] Users can click a repository in the archived view to open the Backup History drawer, generate 15-minute temporary pre-signed S3 download links, and view the Restoration Guide modal.
+- [x] Automated tests verify filtering on the installations API and component rendering/interaction for the archived backups view.

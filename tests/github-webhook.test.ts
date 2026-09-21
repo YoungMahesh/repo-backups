@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { user, githubInstallations, githubRepositories, backupJobs } from "@/db/schema";
 import { signWebhookPayload } from "@/lib/github/crypto";

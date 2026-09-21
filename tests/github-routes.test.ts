@@ -133,8 +133,8 @@ describe("GitHub High-Level Route Handlers", () => {
       expect(data.callbackPath).toBe("/api/github/callback");
       expect(data.webhookPath).toBe("/api/github/webhook");
       expect(Array.isArray(data.permissions)).toBe(true);
-      expect(data.permissions.some((p: any) => p.resource === "Contents" && p.access === "read")).toBe(true);
-      expect(data.permissions.some((p: any) => p.resource === "Metadata" && p.access === "read")).toBe(true);
+      expect(data.permissions.some((p: { resource: string; access: string }) => p.resource === "Contents" && p.access === "read")).toBe(true);
+      expect(data.permissions.some((p: { resource: string; access: string }) => p.resource === "Metadata" && p.access === "read")).toBe(true);
     });
   });
 

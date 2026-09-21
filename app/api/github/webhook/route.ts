@@ -26,7 +26,43 @@ export async function POST(request: NextRequest) {
   }
 
   // 3. Parse JSON payload
-  let payload: Record<string, any>;
+  interface GitHubWebhookPayload {
+    action?: string;
+    zen?: string;
+    installation?: {
+      id?: number;
+      account?: {
+        login?: string;
+        type?: string;
+        avatar_url?: string;
+      };
+    };
+    repository_selection?: string;
+    repositories?: Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private: boolean;
+      default_branch?: string;
+    }>;
+    repositories_added?: Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private: boolean;
+      default_branch?: string;
+    }>;
+    repositories_removed?: Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private: boolean;
+      default_branch?: string;
+    }>;
+    [key: string]: unknown;
+  }
+
+  let payload: GitHubWebhookPayload;
   try {
     payload = JSON.parse(rawBody);
   } catch {

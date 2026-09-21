@@ -15,6 +15,10 @@ import {
   RepositoryInventoryTable,
   RepositoryItem,
 } from "@/components/github/repository-inventory-table";
+import {
+  ArchivedBackupsSection,
+  ArchivedInstallation,
+} from "@/components/github/archived-backups-section";
 import { GitHubAppSetupBanner } from "@/components/github/setup-banner";
 import type { GitHubAppConfigStatus } from "@/lib/github/config";
 
@@ -39,6 +43,8 @@ export default function HomePage() {
   // GitHub backup data states
   const [installations, setInstallations] = useState<ConnectedInstallation[]>([]);
   const [repositories, setRepositories] = useState<RepositoryItem[]>([]);
+  const [archivedInstallations, setArchivedInstallations] = useState<ArchivedInstallation[]>([]);
+  const [archivedRepositories, setArchivedRepositories] = useState<RepositoryItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDisconnectingId, setIsDisconnectingId] = useState<string | null>(null);
@@ -57,8 +63,23 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    checkSetupStatus();
-  }, [checkSetupStatus]);
+    let ignore = false;
+    async function check() {
+      try {
+        const res = await fetch("/api/github/setup-status");
+        if (res.ok && !ignore) {
+          const data = await res.json();
+          setSetupStatus(data);
+        }
+      } catch (err) {
+        console.error("Failed to check GitHub setup status:", err);
+      }
+    }
+    check();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
 
   const resetForm = () => {
@@ -100,9 +121,11 @@ export default function HomePage() {
   const loadDashboardData = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      const [instRes, repoRes] = await Promise.all([
+      const [instRes, repoRes, archivedInstRes, archivedRepoRes] = await Promise.all([
         fetch("/api/installations"),
         fetch("/api/repositories"),
+        fetch("/api/installations?status=disconnected"),
+        fetch("/api/repositories?status=disconnected"),
       ]);
 
       if (instRes.ok) {
@@ -112,6 +135,14 @@ export default function HomePage() {
       if (repoRes.ok) {
         const repoData = await repoRes.json();
         setRepositories(repoData.repositories || []);
+      }
+      if (archivedInstRes.ok) {
+        const archivedInstData = await archivedInstRes.json();
+        setArchivedInstallations(archivedInstData.installations || []);
+      }
+      if (archivedRepoRes.ok) {
+        const archivedRepoData = await archivedRepoRes.json();
+        setArchivedRepositories(archivedRepoData.repositories || []);
       }
       await checkSetupStatus();
     } catch (err) {
@@ -128,9 +159,11 @@ export default function HomePage() {
       if (session?.user) {
         setIsLoadingData(true);
         try {
-          const [instRes, repoRes] = await Promise.all([
+          const [instRes, repoRes, archivedInstRes, archivedRepoRes] = await Promise.all([
             fetch("/api/installations"),
             fetch("/api/repositories"),
+            fetch("/api/installations?status=disconnected"),
+            fetch("/api/repositories?status=disconnected"),
           ]);
           if (!ignore && instRes.ok) {
             const instData = await instRes.json();
@@ -139,6 +172,14 @@ export default function HomePage() {
           if (!ignore && repoRes.ok) {
             const repoData = await repoRes.json();
             setRepositories(repoData.repositories || []);
+          }
+          if (!ignore && archivedInstRes.ok) {
+            const archivedInstData = await archivedInstRes.json();
+            setArchivedInstallations(archivedInstData.installations || []);
+          }
+          if (!ignore && archivedRepoRes.ok) {
+            const archivedRepoData = await archivedRepoRes.json();
+            setArchivedRepositories(archivedRepoData.repositories || []);
           }
         } catch (err) {
           console.error("Failed to load dashboard data:", err);
@@ -340,6 +381,8 @@ export default function HomePage() {
             setSuccessMessage("Signed out successfully.");
             setInstallations([]);
             setRepositories([]);
+            setArchivedInstallations([]);
+            setArchivedRepositories([]);
             router.refresh();
           },
           onError: (ctx) => {
@@ -548,6 +591,13 @@ export default function HomePage() {
                   </div>
                 </div>
               )}
+
+              {/* Archived Backups Section */}
+              <ArchivedBackupsSection
+                archivedInstallations={archivedInstallations}
+                archivedRepositories={archivedRepositories}
+                isLoading={isLoadingData}
+              />
 
               {/* User Account / Session Accordion */}
               <div className="pt-4 border-t border-hairline">

@@ -19,6 +19,18 @@ export async function GET(request: NextRequest) {
 
   const userId = session.user.id;
   const installationId = request.nextUrl.searchParams.get("installationId");
+  const rawStatus = request.nextUrl.searchParams.get("status");
+  const statusParam = rawStatus || (installationId ? "all" : "active");
+
+  const conditions = [eq(githubRepositories.userId, userId)];
+
+  if (installationId) {
+    conditions.push(eq(githubRepositories.installationId, installationId));
+  }
+
+  if (statusParam !== "all") {
+    conditions.push(eq(githubInstallations.status, statusParam));
+  }
 
   const query = db
     .select({
@@ -37,13 +49,14 @@ export async function GET(request: NextRequest) {
       createdAt: githubRepositories.createdAt,
       updatedAt: githubRepositories.updatedAt,
       accountLogin: githubInstallations.accountLogin,
+      installationStatus: githubInstallations.status,
     })
     .from(githubRepositories)
     .innerJoin(
       githubInstallations,
       eq(githubRepositories.installationId, githubInstallations.id),
     )
-    .where(eq(githubRepositories.userId, userId))
+    .where(and(...conditions))
     .orderBy(asc(githubRepositories.fullName));
 
   const repositories = await query;
