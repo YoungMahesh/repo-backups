@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "dotenvx run -- vitest run",
+    "test:unit": "dotenvx run -- vitest run --project unit",
     "test:watch": "dotenvx run -- vitest",
     "db-generate": "dotenvx run -- drizzle-kit generate",
     "db-migrate": "dotenvx run -- drizzle-kit migrate"
