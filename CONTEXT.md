@@ -32,4 +32,13 @@ _Avoid_: Watched repo, tracked repo, enabled project
 The operational instructions and canonical command (`git clone <bundle-file>`) provided to users to reconstruct a working repository from a downloaded Backup Bundle.
 _Avoid_: Unpack steps, extraction script
 
+**Disconnected Installation**:
+An Installation whose authorization has been severed from the platform, halting all scheduled backup operations while preserving historical Backup Bundles in storage.
+_Avoid_: Deleted integration, removed org, cancelled account
+
+**Disconnection**:
+The administrative action of revoking GitHub App access and deactivating an Installation from active backup management.
+_Avoid_: Delete org, remove connection, purge installation
+
+
 
