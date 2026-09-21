@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { githubInstallations, githubRepositories } from "@/db/schema";
 import { verifyState } from "@/lib/github/crypto";
 import {
   fetchInstallationDetails,
   fetchInstallationRepositories,
 } from "@/lib/github/client";
+import { reconcileInstallation } from "@/lib/github/reconciliation";
 
 function getRedirectBaseUrl(request: NextRequest): URL {
   const host =
@@ -84,62 +83,21 @@ export async function GET(request: NextRequest) {
     const details = await fetchInstallationDetails(installationId);
     const repositories = await fetchInstallationRepositories(installationId);
 
-    // 3. Upsert GitHub installation record linked to authenticated user
-    const [savedInstallation] = await db
-      .insert(githubInstallations)
-      .values({
+    // 3. Reconcile installation record and sync authorized repositories
+    const { installation: savedInstallation, repositoriesCount, isReconnected } =
+      await reconcileInstallation({
         userId,
         installationId,
-        accountLogin: details.account.login,
-        accountType: details.account.type || "Organization",
-        avatarUrl: details.account.avatar_url || null,
-        targetType: details.target_type || "selected",
-      })
-      .onConflictDoUpdate({
-        target: githubInstallations.installationId,
-        set: {
-          userId,
-          accountLogin: details.account.login,
-          accountType: details.account.type || "Organization",
-          avatarUrl: details.account.avatar_url || null,
-          targetType: details.target_type || "selected",
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-
-    // 4. Upsert authorized repository inventory
-    for (const repo of repositories) {
-      await db
-        .insert(githubRepositories)
-        .values({
-          installationId: savedInstallation.id,
-          userId,
-          githubRepoId: repo.id,
-          name: repo.name,
-          fullName: repo.full_name,
-          isPrivate: repo.private,
-          defaultBranch: repo.default_branch || "main",
-        })
-        .onConflictDoUpdate({
-          target: githubRepositories.githubRepoId,
-          set: {
-            installationId: savedInstallation.id,
-            userId,
-            name: repo.name,
-            fullName: repo.full_name,
-            isPrivate: repo.private,
-            defaultBranch: repo.default_branch || "main",
-            updatedAt: new Date(),
-          },
-        });
-    }
+        details,
+        repositories,
+      });
 
     if (wantsJson) {
       return NextResponse.json({
         success: true,
         installation: savedInstallation,
-        repositoriesCount: repositories.length,
+        repositoriesCount,
+        reconnected: isReconnected,
       });
     }
 
