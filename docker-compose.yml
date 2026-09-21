@@ -1,6 +1,6 @@
 services:
   sRepoManage:
-    image: repo-manage:0
+    image: repo-manage:${TAG:-0}
     build:
       context: .
       dockerfile: Dockerfile
