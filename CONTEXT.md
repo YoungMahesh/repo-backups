@@ -38,7 +38,8 @@ _Avoid_: Deleted integration, removed org, cancelled account
 
 **Disconnection**:
 The administrative action of revoking GitHub App access and deactivating an Installation from active backup management.
-_Avoid_: Delete org, remove connection, purge installation
+_Avoid_: Delete org, remove connection
 
-
-
+**Archive Purge**:
+The intentional, permanent deletion of historical Backup Bundles from S3 object storage and cascading removal of associated database records for a Disconnected Installation or Repository.
+_Avoid_: Remove archive, wipe backups, clear history

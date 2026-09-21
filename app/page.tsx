@@ -597,6 +597,8 @@ export default function HomePage() {
                 archivedInstallations={archivedInstallations}
                 archivedRepositories={archivedRepositories}
                 isLoading={isLoadingData}
+                onRevalidate={loadDashboardData}
+                onPurgeSuccess={(msg) => setSuccessMessage(msg)}
               />
 
               {/* User Account / Session Accordion */}

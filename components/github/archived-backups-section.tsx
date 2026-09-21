@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BackupHistoryDrawer } from "./backup-history-drawer";
 import { RestorationGuideModal } from "./restoration-guide-modal";
+import { PurgeArchiveModal, PurgeTargetType } from "./purge-archive-modal";
 import type { ConnectedInstallation } from "./organization-card";
 import type { RepositoryItem } from "./repository-inventory-table";
 
@@ -13,11 +14,20 @@ export interface ArchivedInstallation extends ConnectedInstallation {
   repositories?: RepositoryItem[];
 }
 
-interface ArchivedBackupsSectionProps {
+export interface ArchivedBackupsSectionProps {
   archivedInstallations: ArchivedInstallation[];
   archivedRepositories: RepositoryItem[];
   isLoading?: boolean;
   defaultExpanded?: boolean;
+  onRevalidate?: () => Promise<void> | void;
+  onPurgeSuccess?: (message: string) => void;
+}
+
+interface PurgeModalTarget {
+  type: PurgeTargetType;
+  id: string;
+  name: string;
+  bundleCount: number;
 }
 
 function formatDisconnectionDate(date: string | Date | null | undefined): string {
@@ -40,23 +50,139 @@ export function ArchivedBackupsSection({
   archivedRepositories = [],
   isLoading = false,
   defaultExpanded = false,
+  onRevalidate,
+  onPurgeSuccess,
 }: ArchivedBackupsSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultExpanded);
   const [selectedRepoForDrawer, setSelectedRepoForDrawer] = useState<RepositoryItem | null>(null);
   const [directGuideRepo, setDirectGuideRepo] = useState<RepositoryItem | null>(null);
 
+  // Local state to support immediate removal upon purge
+  const [localInstallations, setLocalInstallations] = useState(archivedInstallations);
+  const [localRepositories, setLocalRepositories] = useState(archivedRepositories);
+
+  useEffect(() => {
+    setLocalInstallations(archivedInstallations);
+  }, [archivedInstallations]);
+
+  useEffect(() => {
+    setLocalRepositories(archivedRepositories);
+  }, [archivedRepositories]);
+
+  // Purge state
+  const [purgeModalTarget, setPurgeModalTarget] = useState<PurgeModalTarget | null>(null);
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto-dismiss toast after 5 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
   // Calculate total preserved bundles across all archived repositories
-  const totalPreservedBundles = archivedRepositories.reduce(
+  const totalPreservedBundles = localRepositories.reduce(
     (acc, r) => acc + (r.retentionCount ?? 0),
     0,
   );
 
+  const handlePurgeConfirm = async () => {
+    if (!purgeModalTarget) return;
+
+    setIsPurging(true);
+    setPurgeError(null);
+
+    try {
+      const endpoint =
+        purgeModalTarget.type === "installation"
+          ? `/api/installations/${purgeModalTarget.id}/archive`
+          : `/api/repositories/${purgeModalTarget.id}/archive`;
+
+      const res = await fetch(endpoint, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPurgeError(data.error || "Failed to purge archive.");
+      } else {
+        const successMsg = `Successfully purged archived backups for ${purgeModalTarget.name}.`;
+        setToastMessage(successMsg);
+
+        // Optimistically update local state so purged items immediately disappear
+        if (purgeModalTarget.type === "installation") {
+          const instId = purgeModalTarget.id;
+          const instName = purgeModalTarget.name;
+          setLocalInstallations((prev) => prev.filter((i) => i.id !== instId));
+          setLocalRepositories((prev) =>
+            prev.filter(
+              (r) => r.installationId !== instId && r.accountLogin !== instName,
+            ),
+          );
+        } else {
+          const repoId = purgeModalTarget.id;
+          setLocalRepositories((prev) => prev.filter((r) => r.id !== repoId));
+        }
+
+        setPurgeModalTarget(null);
+
+        if (onPurgeSuccess) {
+          onPurgeSuccess(successMsg);
+        }
+
+        if (onRevalidate) {
+          await onRevalidate();
+        }
+      }
+    } catch (err: unknown) {
+      setPurgeError(
+        err instanceof Error ? err.message : "An unexpected error occurred during purge.",
+      );
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   return (
     <section
-      className="rounded-lg border border-hairline bg-surface-soft/40 shadow-xs transition-colors"
+      className="relative rounded-lg border border-hairline bg-surface-soft/40 shadow-xs transition-colors"
       data-testid="archived-backups-section"
       aria-labelledby="archived-backups-heading"
     >
+      {/* Toast Feedback Notification */}
+      {toastMessage && (
+        <div
+          role="status"
+          data-testid="purge-toast"
+          className="fixed bottom-6 right-6 z-50 flex items-center justify-between gap-3 rounded-lg border border-hairline bg-surface-card p-4 shadow-xl text-xs font-sans text-ink max-w-md animate-in fade-in slide-in-from-bottom-2"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+              </svg>
+            </span>
+            <span className="font-medium text-body">{toastMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="rounded p-1 text-muted hover:text-ink cursor-pointer transition-colors"
+            aria-label="Close notification"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Collapsible Header */}
       <button
         type="button"
@@ -88,7 +214,7 @@ export function ArchivedBackupsSection({
                 Archived Backups
               </h2>
               <Badge variant="pill" data-testid="archived-accounts-count-badge">
-                {archivedInstallations.length}
+                {localInstallations.length}
               </Badge>
             </div>
             <p className="font-sans text-xs text-muted mt-0.5">
@@ -132,6 +258,23 @@ export function ArchivedBackupsSection({
           className="border-t border-hairline px-5 pb-6 pt-4 sm:px-6 space-y-6"
           data-testid="archived-backups-content"
         >
+          {/* Purge Error Notice if any */}
+          {purgeError && (
+            <div
+              role="alert"
+              className="rounded-md border border-error/25 bg-error/10 p-3 text-xs text-error flex items-center justify-between gap-2"
+            >
+              <span>{purgeError}</span>
+              <button
+                type="button"
+                onClick={() => setPurgeError(null)}
+                className="font-semibold underline cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Informational Callout */}
           <div className="rounded-lg border border-hairline bg-surface-card/70 p-4 text-xs space-y-1">
             <div className="flex items-center gap-2 font-medium text-ink">
@@ -150,7 +293,7 @@ export function ArchivedBackupsSection({
               <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-hairline border-t-primary" />
               <p>Loading archived accounts and historical backups...</p>
             </div>
-          ) : archivedInstallations.length === 0 ? (
+          ) : localInstallations.length === 0 ? (
             <div
               className="py-10 text-center text-xs text-muted space-y-2 rounded-lg border border-dashed border-hairline p-6"
               data-testid="no-archived-backups-msg"
@@ -163,8 +306,8 @@ export function ArchivedBackupsSection({
             </div>
           ) : (
             <div className="space-y-6" data-testid="archived-accounts-list">
-              {archivedInstallations.map((inst) => {
-                const accountRepos = archivedRepositories.filter(
+              {localInstallations.map((inst) => {
+                const accountRepos = localRepositories.filter(
                   (r) => r.installationId === inst.id || r.accountLogin === inst.accountLogin,
                 );
 
@@ -215,17 +358,40 @@ export function ArchivedBackupsSection({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <span className="font-medium text-ink">{accountRepos.length}</span>
-                        <span>{accountRepos.length === 1 ? "repository" : "repositories"}</span>
-                        <span>&bull;</span>
-                        <span
-                          className="font-semibold text-ink"
-                          data-testid={`account-bundle-count-${inst.accountLogin}`}
+                      <div className="flex items-center gap-3 self-end sm:self-center flex-wrap">
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                          <span className="font-medium text-ink">{accountRepos.length}</span>
+                          <span>{accountRepos.length === 1 ? "repository" : "repositories"}</span>
+                          <span>&bull;</span>
+                          <span
+                            className="font-semibold text-ink"
+                            data-testid={`account-bundle-count-${inst.accountLogin}`}
+                          >
+                            {accountBundleCount}
+                          </span>
+                          <span>{accountBundleCount === 1 ? "bundle preserved" : "bundles preserved"}</span>
+                        </div>
+
+                        {/* Purge Account Archive Button */}
+                        <button
+                          type="button"
+                          data-testid={`purge-archive-account-${inst.accountLogin}`}
+                          onClick={() =>
+                            setPurgeModalTarget({
+                              type: "installation",
+                              id: inst.id,
+                              name: inst.accountLogin,
+                              bundleCount: accountBundleCount,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-canvas px-2.5 py-1 text-xs font-medium text-muted hover:text-error hover:border-error/40 hover:bg-error/5 active:bg-error/10 transition-colors shadow-2xs cursor-pointer"
+                          title="Permanently purge preserved disaster-recovery archive for this account"
                         >
-                          {accountBundleCount}
-                        </span>
-                        <span>{accountBundleCount === 1 ? "bundle preserved" : "bundles preserved"}</span>
+                          <svg className="h-3.5 w-3.5 text-current" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a1.75 1.75 0 0 0 1.744 1.575h2.2a1.75 1.75 0 0 0 1.744-1.575l.66-6.6a.75.75 0 1 0-1.492-.15l-.66 6.6a.25.25 0 0 1-.252.225h-2.2a.25.25 0 0 1-.252-.225l-.66-6.6a.75.75 0 0 0-1.492.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z" />
+                          </svg>
+                          <span>Purge Archive</span>
+                        </button>
                       </div>
                     </div>
 
@@ -272,7 +438,7 @@ export function ArchivedBackupsSection({
 
                             {/* Preserved Bundle Count & Actions */}
                             <div
-                              className="flex items-center gap-3 self-end sm:self-center"
+                              className="flex items-center gap-2.5 self-end sm:self-center"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div
@@ -320,6 +486,27 @@ export function ArchivedBackupsSection({
                                 </svg>
                                 <span>Backups &amp; Restore</span>
                               </button>
+
+                              {/* Purge Individual Repository Archive Button */}
+                              <button
+                                type="button"
+                                data-testid={`purge-repo-archive-${repo.name}`}
+                                onClick={() =>
+                                  setPurgeModalTarget({
+                                    type: "repository",
+                                    id: repo.id,
+                                    name: repo.name,
+                                    bundleCount: repo.retentionCount ?? 0,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 rounded-md border border-hairline bg-canvas px-2.5 py-1 text-xs font-medium text-muted hover:text-error hover:border-error/40 hover:bg-error/5 active:bg-error/10 transition-colors shadow-2xs cursor-pointer"
+                                title="Permanently purge this repository archive"
+                              >
+                                <svg className="h-3 w-3 text-current" viewBox="0 0 16 16" fill="currentColor">
+                                  <path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a1.75 1.75 0 0 0 1.744 1.575h2.2a1.75 1.75 0 0 0 1.744-1.575l.66-6.6a.75.75 0 1 0-1.492-.15l-.66 6.6a.25.25 0 0 1-.252.225h-2.2a.25.25 0 0 1-.252-.225l-.66-6.6a.75.75 0 0 0-1.492.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z" />
+                                </svg>
+                                <span>Purge</span>
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -349,6 +536,21 @@ export function ArchivedBackupsSection({
           onClose={() => setDirectGuideRepo(null)}
           bundleFileName={`${directGuideRepo.name}.bundle`}
           repoName={directGuideRepo.name}
+        />
+      )}
+
+      {/* Purge Archive Confirmation Modal */}
+      {purgeModalTarget && (
+        <PurgeArchiveModal
+          isOpen={!!purgeModalTarget}
+          onClose={() => {
+            if (!isPurging) setPurgeModalTarget(null);
+          }}
+          onConfirm={handlePurgeConfirm}
+          type={purgeModalTarget.type}
+          targetName={purgeModalTarget.name}
+          bundleCount={purgeModalTarget.bundleCount}
+          isPurging={isPurging}
         />
       )}
     </section>

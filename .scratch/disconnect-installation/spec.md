@@ -1,23 +1,27 @@
-# Spec: GitHub Installation Disconnection and Historical Backup Retention
+# Spec: GitHub Installation Disconnection, Historical Retention, and Archive Purge
 
 Status: ready-for-agent
 
 ## Problem Statement
 
-Engineering teams and organization administrators who connect their GitHub organizations or personal accounts to the repository backup platform currently have no way to remove or disconnect an installation once added. When an organization offboards from the platform, undergoes corporate restructuring, or no longer requires automated repository backups, users are left with the installation permanently occupying their operations dashboard. This causes unnecessary scheduled backup attempts, log noise, and cluttered repository inventories.
+Engineering teams and organization administrators who connect their GitHub organizations or personal accounts to the repository backup platform face two distinct lifecycle challenges when offboarding or managing inactive accounts:
 
-Furthermore, in standard backup systems, deleting an integration frequently introduces catastrophic data loss by cascade-deleting historical backup archives, commit history, and disaster-recovery points stored in object storage. Users need an explicit, safe, and controlled mechanism to sever GitHub authorization and halt active backup schedules, while guaranteeing that existing disaster-recovery Git bundles remain completely intact, accessible, and downloadable.
+1. **Inability to Disconnect Defunct Installations**: Users currently have no way to remove or disconnect an installation once added. When an organization offboards from the platform, undergoes corporate restructuring, or no longer requires automated repository backups, users are left with the installation permanently occupying their active dashboard. This causes unnecessary scheduled backup attempts, log noise, and cluttered repository inventories.
+2. **Data Retention vs. Storage Cost Tension**: Standard backup systems frequently force an all-or-nothing choice: either keep paying storage costs indefinitely for retained archives of disconnected accounts, or delete the integration and risk silent, catastrophic data loss across all disaster-recovery points in object storage. Users need an explicit, safe, two-stage lifecycle:
+   - **Stage 1 (Disconnection)**: Safely sever GitHub authorization and halt active backup schedules while strictly preserving historical disaster-recovery Git bundles in S3 storage.
+   - **Stage 2 (Archive Purge)**: Intentionally and permanently purge historical disaster-recovery Git bundles from S3 object storage and remove associated database records when archives are obsolete or must be destroyed for compliance or cost control.
 
 ## Solution
 
-A complete installation disconnection workflow adhering to the platform's warm-canvas editorial design system, domain glossary, and bidirectional GitHub synchronization:
+A complete installation lifecycle adhering to the platform's warm-canvas editorial design system, domain glossary, and bidirectional GitHub synchronization:
 
 1. **User-Initiated Disconnection with Confirmation Safeguards**: Authenticated users can trigger a "Disconnect" action directly from their active installation view. A warm-canvas modal requires users to type the exact account login name to prevent accidental clicks, and provides explicit assurance that past backup bundles stored in S3 remain safe and downloadable.
 2. **Bi-directional GitHub Synchronization**: When disconnected from the platform, the system calls GitHub's REST API to uninstall the GitHub App on the remote account (treating 404 responses as remote success and providing a resilient local-disconnect fallback). Conversely, if an organization administrator uninstalls or suspends the App directly within GitHub's settings, incoming GitHub webhooks (`installation.deleted` and `installation.suspend`) automatically synchronize the local state.
 3. **In-Flight Job Abortion and Schedule Deactivation**: Any backup jobs currently running for the installation's repositories are immediately terminated and marked cancelled, freeing operational resources. Future backup schedules for all associated repositories are deactivated.
-4. **Historical Backup Preservation & Schema Integrity**: Rather than hard-deleting records and triggering foreign-key cascades across repositories and backup jobs, the installation record transitions to a `disconnected` state with an audit timestamp (`disconnectedAt`). Historical Git bundles in S3 storage and their metadata remain untouched.
+4. **Historical Backup Preservation & Schema Integrity**: Rather than hard-deleting records upon disconnection, the installation record transitions to a `disconnected` state with an audit timestamp (`disconnectedAt`). Historical Git bundles in S3 storage and their metadata remain untouched.
 5. **Dashboard Clarity & Archived Backups Access**: Disconnected installations and their repositories are removed from active dashboard management, uncluttering the workspace. A subtle, collapsible "Archived Backups" section at the bottom of the dashboard allows users to browse past repositories and instantly generate pre-signed S3 download links for historical backup bundles.
 6. **Reconnection Reconciliation**: If an organization is re-connected in the future, the platform automatically re-activates the installation record and reconciles existing repositories and backup history seamlessly.
+7. **User-Initiated Archive Purge (Permanent S3 Storage Erasure & DB Cascade)**: Users can permanently purge preserved disaster-recovery archives directly from the "Archived Backups" section. Users can purge an entire disconnected installation or an individual repository under a disconnected installation. Purging permanently deletes the Git `.bundle` files from S3 object storage via delete commands, cascade-deletes the PostgreSQL database records, requires typed confirmation matching the account or repository name, and provides toast notifications with instant dashboard state revalidation.
 
 ## User Stories
 
@@ -41,59 +45,81 @@ A complete installation disconnection workflow adhering to the platform's warm-c
 18. As a user, I want the option to reconnect a previously disconnected organization via the standard "Connect Organization" flow, so that I can resume backups without having to rebuild repository history from scratch.
 19. As a user, I want re-connecting an installation to reconcile existing repositories and their past backup history, so that previous backup points remain seamlessly linked.
 20. As a user, I want the entire disconnection and archival experience to strictly follow the warm-canvas editorial design system (cream canvas, serif typography, muted archival styling, and coral accents), so that the UI remains coherent, elegant, and reassuring.
+21. As an organization administrator with obsolete preserved backups, I want to purge an entire disconnected account archive from the Archived Backups section, so that I can permanently eliminate unwanted data and stop incurring S3 storage costs.
+22. As an organization administrator, I want to purge an individual repository's archives within a disconnected account, so that I can selectively prune decommissioned repositories while keeping disaster-recovery archives for other repositories in the same organization.
+23. As a user, I want the purge action to open a dedicated warm-canvas confirmation modal, so that irreversible data destruction cannot happen by accident.
+24. As a user, I want the purge confirmation modal to explicitly warn me that all Git backup bundles stored in S3 will be permanently deleted and cannot be recovered.
+25. As an organization administrator purging an account archive, I want the modal to require typing the exact GitHub account login name to enable the purge button, so that catastrophic account deletion requires explicit deliberate intent.
+26. As a user purging a repository archive, I want the modal to require typing the exact repository name to enable the purge button, so that repo deletion is safeguarded.
+27. As a user, I want the purge process to delete the actual `.bundle` objects from S3 object storage via S3 delete commands, so that storage is freed immediately in AWS.
+28. As a user, I want S3 object deletions during a purge to be resilient and idempotent, so that if an S3 object is already missing (`NoSuchKey`), the purge continues gracefully rather than stranding me with undeletable database records.
+29. As a user, I want the database records for purged installations or repositories to be cascade-deleted from PostgreSQL upon successful S3 purge, so that no orphaned or broken records remain.
+30. As a user, I want Archive Purge to be strictly forbidden on active installations and active repositories, so that active production backup pipelines cannot be accidentally purged without first disconnecting.
+31. As a security-conscious administrator, I want purge endpoints to enforce authentication and strict user ownership, returning 401 for unauthenticated requests and 403 for unauthorized requests.
+32. As a user, I want a clear feedback toast notification when an archive purge completes, so that I have immediate confirmation of successful data destruction.
+33. As a user, I want the dashboard state to revalidate immediately after an archive purge, so that purged repositories or accounts disappear from the Archived Backups section without requiring a full page refresh.
+34. As a user who purges all repositories in a disconnected account one-by-one, I want the disconnected account shell to remain visible with 0 repositories and 0 bundles preserved, so that I can still choose to purge the account shell or re-connect the organization later.
+35. As a user who reconnects a previously purged organization via the GitHub App flow, I want the platform to treat it as a fresh, clean installation with zero prior backup jobs, so that there are no stale references or integrity issues.
+36. As a user, I want the purge trigger buttons on the account header and repository rows to be styled with subtle warm-canvas destructive accents, so that destructive actions are discoverable yet visually distinct from routine restore actions.
 
 ## Implementation Decisions
 
 ### Domain & Architectural Model
 
-- **Domain Glossary Alignment**: The entity is an **Installation** (which may be owned by an Organization or a personal User account). The operation is **Disconnection**, resulting in a **Disconnected Installation**. All active backup enrollments and schedules cease, while **Backup Bundles** are preserved.
-- **Bi-Directional Synchronization**: Disconnection operations can originate from either the platform UI (calling GitHub's App REST API `DELETE /app/installations/{installation_id}`) or from GitHub itself (handling the `installation` webhook with actions `deleted` and `suspend`).
-- **Orphan Protection Policy**: S3 storage objects are immutable disaster-recovery archives and are never deleted when an installation is disconnected.
+- **Two-Stage Lifecycle**: The platform establishes an explicit two-stage lifecycle for account offboarding:
+  - **Stage 1 (Disconnection)**: Non-destructive revocation. Sever GitHub authorization and cancel scheduled runs while strictly preserving all historical Backup Bundles in S3 object storage and maintaining database metadata (ADR-0006).
+  - **Stage 2 (Archive Purge)**: Destructive, permanent storage erasure. User-initiated deletion of all preserved Git `.bundle` files from S3 and cascade-deletion of PostgreSQL database records (ADR-0008).
+- **Ubiquitous Language**: The domain term is **Archive Purge** (verb: **Purge**). We avoid ambiguous terms like "remove archive", "wipe backups", or "clear history" (CONTEXT.md).
+- **Eligibility Barrier**: Archive Purge is strictly restricted to disconnected installations and their repositories. Active installations must be disconnected first before any archive can be purged.
 
-### Database Schema Changes
+### Storage & Database Deletion Semantics
 
-- Extend the `github_installations` table with two new attributes:
-  - `status`: text, non-null, default `"active"` (allowed values: `"active"`, `"disconnected"`, `"suspended"`).
-  - `disconnected_at`: timestamp with timezone, nullable.
-- When an installation is disconnected:
-  - `status` is updated to `"disconnected"`.
-  - `disconnected_at` is set to the current timestamp.
-  - All associated `github_repositories` records have `backup_enabled` set to `false`.
-  - No records in `github_installations`, `github_repositories`, or `backup_jobs` are deleted, eliminating database foreign-key cascade deletions.
-- When an installation is re-installed:
-  - `status` is updated to `"active"`.
-  - `disconnected_at` is cleared to `null`.
-  - Existing repositories are reconciled against the newly authorized repository list.
+- **S3 Bundle Deletion**:
+  - When an account archive is purged, all completed backup jobs across all repositories of that installation are identified, and their corresponding S3 objects (`s3Bucket`, `s3Key`) are deleted using the S3 storage delete client.
+  - When a repository archive is purged, only the backup jobs belonging to that specific repository have their S3 objects deleted.
+  - S3 deletion operations are idempotent: missing objects (e.g. `NoSuchKey` / 404) are treated as successful deletions, ensuring database cleanups are never permanently blocked by transient storage anomalies.
+- **PostgreSQL Cascade Deletion**:
+  - Database schema foreign keys are configured with `onDelete: "cascade"`. Deleting a `github_installations` record automatically cascades to delete all child `github_repositories` and `backup_jobs`.
+  - Deleting a `github_repositories` record automatically cascades to delete all child `backup_jobs`.
+  - Database deletions occur immediately following the S3 deletion step.
+- **Reconnection After Purge**:
+  - Because database records are hard-deleted, if a user re-installs the GitHub App for a previously purged organization, the OAuth/App callback treats it as a brand-new installation, generating fresh records with no stale backup references.
 
-### Modules and Interfaces
+### API Route Contracts
 
-1. **GitHub Client Module**:
-   - Add an uninstallation function that generates an RS256 JWT using the GitHub App credentials and issues a `DELETE` request to `https://api.github.com/app/installations/{installation_id}`.
-   - Handle response status codes: 204 No Content (success), 404 Not Found (success/already removed), and error responses.
-   - Provide a mock client adapter interface to support deterministic, offline unit and integration testing.
+- **Installation Archive Purge Endpoint**:
+  - Route: `DELETE /api/installations/[id]/archive`
+  - Verifies user authentication session (401 if unauthenticated).
+  - Verifies installation existence and user ownership (404 if missing, 403 if not owner).
+  - Verifies installation `status === "disconnected"` (400 if active or suspended).
+  - Collects all S3 bucket and key pairs from completed backup jobs across all repositories of the installation.
+  - Deletes all S3 objects using the S3 client.
+  - Cascade-deletes the `github_installations` database record.
+  - Returns `{ success: true, purgedRepositoriesCount, purgedBundlesCount }`.
+- **Repository Archive Purge Endpoint**:
+  - Route: `DELETE /api/repositories/[id]/archive`
+  - Verifies user authentication session (401 if unauthenticated).
+  - Verifies repository existence and user ownership (404 if missing, 403 if not owner).
+  - Verifies parent installation `status === "disconnected"` (400 if parent installation is active).
+  - Collects all S3 bucket and key pairs from completed backup jobs of the repository.
+  - Deletes all S3 objects using the S3 client.
+  - Cascade-deletes the `github_repositories` database record.
+  - Returns `{ success: true, repositoryId, purgedBundlesCount }`.
 
-2. **Installation Management API Routes**:
-   - Extend the installations endpoint to support `DELETE /api/installations/[id]` (or `DELETE /api/installations` with query/body):
-     - Authenticates user session.
-     - Verifies user ownership of the targeted installation.
-     - Queries for any in-flight backup jobs (`status: "running"`) belonging to repositories of this installation, cancels them, and logs cancellation details.
-     - Calls the GitHub Client uninstallation function.
-     - Executes a database transaction to update installation status, timestamp, and disable repository backup schedules.
-   - Update the `GET /api/installations` route to support status filtering (`?status=active|disconnected|all`), defaulting to active installations for the primary dashboard and allowing retrieval of disconnected installations for archival views.
+### UI Components & Editorial Design (Warm-Canvas)
 
-3. **GitHub Webhook Ingestion Module**:
-   - Enhance the webhook handler to process incoming `installation` events:
-     - On `action: "deleted"`: Locate the installation by GitHub installation ID, cancel in-flight jobs, mark status as `"disconnected"`, set `disconnected_at`, and disable backup schedules.
-     - On `action: "suspend"`: Update status to `"suspended"` and pause backup schedules.
-     - On `action: "unsuspend"`: Restore status to `"active"`.
-
-4. **OAuth / App Callback Reconciliation Module**:
-   - In the callback handler, when upserting an installation upon connection, ensure that if a record previously existed with `status: "disconnected"`, it transitions back to `status: "active"` and resets `disconnected_at` to `null`.
-
-5. **UI Components (Warm-Canvas Editorial System)**:
-   - **Organization Card**: Add a secondary destructive "Disconnect" action button styled with `text-error` and subtle hover states next to existing card actions.
-   - **Disconnect Confirmation Modal**: Implement a modal using the warm-canvas design tokens (`surface-card`, serif heading, muted body text, informative alert on S3 data preservation, input field requiring typed account login, and a disabled-until-matched "Disconnect Installation" button).
-   - **Archived Backups Section**: A collapsible component placed beneath the active dashboard, rendered in muted styling, listing disconnected accounts, authorized repositories, completed backup counts, and providing direct access to the Backup History drawer for pre-signed downloads.
+- **Archive Purge Confirmation Modal**:
+  - Warm-canvas styling adhering to `DESIGN.md` (warm paper canvas, serif headings, hairline borders, soft coral/destructive accents).
+  - Explicit destructive callout alerting the user that all preserved backup bundles in S3 will be permanently deleted and cannot be restored.
+  - Interactive input field requiring the user to type the exact account login (for installation purge) or repository name (for repository purge).
+  - Destructive action button remains disabled until the input exactly matches the target string.
+  - Displays a loading spinner and disables controls during the purge network request.
+- **Archived Backups Section Controls**:
+  - **Account Header**: A "Purge Archive" outline button styled with subtle warm-canvas destructive hover accents, placed on the right side of the disconnected account header.
+  - **Repository Row**: A "Purge" button placed alongside "Guide" and "Backups & Restore" on each repository row.
+- **Toast Notifications & State Revalidation**:
+  - Displays an immediate success toast upon completion (e.g., "Successfully purged archived backups for {name}").
+  - Invokes dashboard data revalidation / refresh callbacks to remove purged entities from the view without requiring a full browser reload.
 
 ## Testing Decisions
 
@@ -101,40 +127,45 @@ A complete installation disconnection workflow adhering to the platform's warm-c
 
 Tests must verify external behavioral contracts across clean module seams without coupling to private internal implementation details. Good tests verify:
 - End-to-end HTTP response status codes, payload structures, and database state transitions.
-- Security constraints (preventing unauthenticated or unauthorized users from disconnecting foreign installations).
-- Resilient error handling (such as remote 404s and mock network failures).
-- UI state machines (modal open/close transitions, disabled button states until input matches, and post-action state updates).
+- Security constraints (preventing unauthenticated or unauthorized users from purging foreign installations or repositories).
+- Business rule enforcement (rejecting purge requests on active installations with 400 Bad Request).
+- S3 object deletion calls (verifying the S3 client receives delete commands for every associated bundle).
+- Idempotency and resiliency (verifying that missing S3 objects do not fail the database purge).
+- UI state machines (modal open/close transitions, disabled button states until input matches, toast triggering, and post-action state revalidation).
 
 ### Testing Seams & Coverage
 
 1. **HTTP Route Handler Seam (Primary Backend Seam)**:
-   - Exercise the `DELETE` endpoint using synthetic `NextRequest` objects against a real test database.
-   - Use the existing mock GitHub client adapter to verify that the remote GitHub uninstallation endpoint is invoked.
-   - Verify that running backup jobs are transitioned to cancelled.
-   - Verify that database records remain intact with `status = "disconnected"` and `backupEnabled = false`.
+   - Exercise `DELETE /api/installations/[id]/archive` and `DELETE /api/repositories/[id]/archive` using synthetic `NextRequest` objects against a real test database.
+   - Use mock S3 storage to verify that delete calls are dispatched for all tracked bundle keys.
+   - Verify that 401 is returned when unauthenticated, 403 when unauthorized, 404 when not found, and 400 when attempting to purge active installations.
+   - Verify that database records are cleanly cascade-deleted.
    - Verify status filtering on `GET /api/installations`.
-2. **Webhook Seam (Event Ingestion Seam)**:
-   - Post simulated GitHub webhook payloads with valid HMAC-SHA256 signatures for `installation.deleted` and `installation.suspend`.
-   - Verify that local database records transition properly without human intervention.
-3. **UI Component Seam (User Interaction Seam)**:
-   - Render `OrganizationCard` and the confirmation modal using Vitest and React Testing Library.
-   - Test that the confirm button remains disabled until the account login is typed exactly.
-   - Test that confirming triggers the disconnect API call and refreshes dashboard state.
-   - Test rendering and interactions in the Archived Backups section.
+2. **UI Component Seam (User Interaction Seam)**:
+   - Render `ArchivedBackupsSection` and `PurgeArchiveModal` using Vitest and React Testing Library.
+   - Verify that "Purge Archive" and "Purge" buttons render properly with warm-canvas styling.
+   - Verify that clicking a purge button opens the confirmation modal with accurate target details.
+   - Verify that the confirm button remains disabled until the exact account login or repo name is typed.
+   - Verify that submitting the modal dispatches the archive delete request, triggers a success toast, and invokes the refresh callback.
 
 ### Prior Art in Codebase
 
-- `tests/github-routes.test.ts`: Established pattern for testing authenticated Next.js route handlers with in-memory mock GitHub clients and Postgres test databases.
-- `tests/github-webhook.test.ts`: Pattern for generating HMAC signatures and posting synthetic GitHub webhook events.
-- `tests/github-components.test.tsx`: Pattern for component unit testing with Vitest, jsdom, and testing-library.
+- `tests/github-routes.test.ts`: Pattern for testing authenticated Next.js route handlers with in-memory mock clients and test database records.
+- `tests/backup-download-routes.test.ts`: Pattern for verifying S3 storage mock interactions and pre-signed URL behaviors.
+- `tests/archived-backups.test.tsx`: Pattern for component unit testing of the Archived Backups section using Vitest and React Testing Library.
+- `tests/installation-disconnection.test.tsx`: Pattern for testing typed confirmation modals and state updates.
 
 ## Out of Scope
 
-- Permanent deletion / purging of S3 backup bundles upon disconnection (reserved for future dedicated retention and storage cleanup controls).
-- Individual repository unlinking (handled via GitHub's "Manage Permissions" repository selection flow).
-- Multi-factor authentication step on disconnection (the typed organization name confirmation provides appropriate friction).
+- Purging active installations or repositories without disconnecting first (they must be disconnected first to protect active backup pipelines).
+- Individual point-in-time backup bundle deletion from the Backup History drawer (fine-grained bundle pruning is handled via rolling retention window policies).
+- Automated S3 bucket lifecycle expiration rules (archive purge is an explicit, intentional user-driven action).
+- Multi-factor authentication prompt on purge (the typed confirmation provides sufficient intentional friction).
 
 ## Further Notes
 
-- Architecture decision records: [0002-github-app-installation-model.md](file:///root/repo-manage/docs/adr/0002-github-app-installation-model.md) and [0006-installation-disconnection-and-backup-retention.md](file:///root/repo-manage/docs/adr/0006-installation-disconnection-and-backup-retention.md).
-- Glossary and language rules: [CONTEXT.md](file:///root/repo-manage/CONTEXT.md).
+- Architecture decision records:
+  - [0002-github-app-installation-model.md](file:///root/repo-manage/docs/adr/0002-github-app-installation-model.md)
+  - [0006-installation-disconnection-and-backup-retention.md](file:///root/repo-manage/docs/adr/0006-installation-disconnection-and-backup-retention.md)
+  - [0008-user-initiated-archive-purge.md](file:///root/repo-manage/docs/adr/0008-user-initiated-archive-purge.md)
+- Domain glossary and language rules: [CONTEXT.md](file:///root/repo-manage/CONTEXT.md).

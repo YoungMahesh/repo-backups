@@ -309,6 +309,25 @@ export async function deleteBackupBundle(
     Key: params.key,
   });
 
-  await s3.send(command);
+  try {
+    await s3.send(command);
+  } catch (err: unknown) {
+    const error = err as {
+      name?: string;
+      Code?: string;
+      code?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    const isNotFound =
+      error.name === "NoSuchKey" ||
+      error.name === "NotFound" ||
+      error.Code === "NoSuchKey" ||
+      error.code === "NoSuchKey" ||
+      error.$metadata?.httpStatusCode === 404;
+    if (isNotFound) {
+      return;
+    }
+    throw err;
+  }
 }
 
