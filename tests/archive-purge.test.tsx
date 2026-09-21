@@ -555,6 +555,7 @@ describe("User-Initiated Archive Purge for Disconnected Backups (Ticket 05)", ()
         targetType: "selected",
         status: "disconnected",
         disconnectedAt: new Date("2026-09-18T10:00:00Z"),
+        repositoryCount: 1,
       },
     ];
 

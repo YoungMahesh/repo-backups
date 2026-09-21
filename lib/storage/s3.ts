@@ -74,8 +74,36 @@ export function getDefaultBackupBucket(): string {
   return process.env.S3_BUCKET || "repo-backups";
 }
 
+export function formatErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    const anyErr = err as {
+      name?: string;
+      code?: string;
+      Code?: string;
+      $metadata?: { httpStatusCode?: number };
+      $response?: { statusCode?: number };
+    };
+    const status = anyErr.$metadata?.httpStatusCode ?? anyErr.$response?.statusCode;
+    const code = anyErr.Code || anyErr.code;
+
+    if (err.name === "UnknownError" || err.message === "UnknownError" || !err.message) {
+      if (status) {
+        return `S3 request failed with HTTP ${status}${code ? ` (${code})` : ""}`;
+      }
+      return err.name || "Unknown error";
+    }
+
+    if (status && !err.message.includes(String(status))) {
+      return `${err.message} (HTTP ${status})`;
+    }
+
+    return err.message;
+  }
+  return String(err);
+}
+
 export function getS3Client(): S3Client {
-  return new S3Client({
+  const client = new S3Client({
     region: process.env.AWS_REGION || "us-east-2",
     endpoint: process.env.AWS_ENDPOINT_URL_S3,
     credentials: {
@@ -84,6 +112,25 @@ export function getS3Client(): S3Client {
     },
     forcePathStyle: true,
   });
+
+  // Strip trailing slashes on bucket-level requests to prevent 308 redirects from custom proxies
+  client.middlewareStack.add(
+    (next) => async (args: unknown) => {
+      const request = (args as { request?: { path?: string } })?.request;
+      if (
+        request &&
+        typeof request.path === "string" &&
+        request.path.length > 1 &&
+        request.path.endsWith("/")
+      ) {
+        request.path = request.path.slice(0, -1);
+      }
+      return next(args as Parameters<typeof next>[0]);
+    },
+    { step: "finalizeRequest", name: "stripTrailingSlash" },
+  );
+
+  return client;
 }
 
 /**
@@ -124,11 +171,33 @@ export async function ensureBucketExists(
     await client.send(new HeadBucketCommand({ Bucket: bucketName }));
     verifiedBuckets.add(bucketName);
   } catch (err: unknown) {
-    const error = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    const error = err as {
+      name?: string;
+      Code?: string;
+      code?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    const statusCode = error.$metadata?.httpStatusCode;
+
     const isNotFound =
       error.name === "NotFound" ||
       error.name === "NoSuchBucket" ||
-      error.$metadata?.httpStatusCode === 404;
+      statusCode === 404;
+
+    const isForbidden =
+      error.name === "Forbidden" ||
+      error.name === "AccessDenied" ||
+      error.Code === "AccessDenied" ||
+      error.code === "AccessDenied" ||
+      statusCode === 403;
+
+    if (isForbidden) {
+      // In multi-tenant S3 gateways or restricted IAM credentials, bucket-level HeadBucket
+      // is disallowed (403), but the pre-allocated tenant bucket exists and object operations
+      // (PutObject, GetObject, DeleteObject) are permitted.
+      verifiedBuckets.add(bucketName);
+      return;
+    }
 
     if (isNotFound) {
       try {
@@ -195,7 +264,7 @@ export async function uploadBackupBundle(
   if (params.filePath) {
     const stat = await fs.promises.stat(params.filePath);
     sizeBytes = stat.size;
-    body = fs.createReadStream(params.filePath);
+    body = await fs.promises.readFile(params.filePath);
   } else if (params.body) {
     body = params.body;
   } else {
