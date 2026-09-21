@@ -5,11 +5,11 @@ When an organization administrator uninstalls or suspends the GitHub App directl
 
 **Blocked by:** 01: User-Initiated Disconnection with Confirmation Modal & Remote GitHub Revocation
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Webhook route processes incoming `installation` events verified with `X-Hub-Signature-256`.
-- [ ] Handling `action: "deleted"` updates the installation to `status = "disconnected"`, sets `disconnected_at = now()`, disables `backup_enabled = false` for its repositories, and cancels any running backup jobs.
-- [ ] Handling `action: "suspend"` updates installation `status = "suspended"` and disables `backup_enabled` on its repositories.
-- [ ] Handling `action: "unsuspend"` restores installation `status = "active"`.
-- [ ] Gracefully acknowledges unrecognized or already disconnected installations with 200 OK to prevent infinite delivery retries from GitHub.
-- [ ] Automated tests simulate signed GitHub webhook payloads for `deleted`, `suspend`, and `unsuspend` actions, verifying database state transitions.
+- [x] Webhook route processes incoming `installation` events verified with `X-Hub-Signature-256`.
+- [x] Handling `action: "deleted"` updates the installation to `status = "disconnected"`, sets `disconnected_at = now()`, disables `backup_enabled = false` for its repositories, and cancels any running backup jobs.
+- [x] Handling `action: "suspend"` updates installation `status = "suspended"` and disables `backup_enabled` on its repositories.
+- [x] Handling `action: "unsuspend"` restores installation `status = "active"`.
+- [x] Gracefully acknowledges unrecognized or already disconnected installations with 200 OK to prevent infinite delivery retries from GitHub.
+- [x] Automated tests simulate signed GitHub webhook payloads for `deleted`, `suspend`, and `unsuspend` actions, verifying database state transitions.

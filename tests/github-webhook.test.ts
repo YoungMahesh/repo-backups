@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
-import { user, githubInstallations, githubRepositories } from "@/db/schema";
+import { user, githubInstallations, githubRepositories, backupJobs } from "@/db/schema";
 import { signWebhookPayload } from "@/lib/github/crypto";
 import { POST as webhookHandler } from "@/app/api/github/webhook/route";
 
@@ -422,6 +422,392 @@ describe("GitHub Webhook Endpoint (/api/github/webhook)", () => {
           "content-type": "application/json",
           "x-hub-signature-256": signature,
           "x-github-event": "installation_repositories",
+        },
+        body,
+      });
+
+      const res = await webhookHandler(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.message).toContain("not registered in local database");
+    });
+  });
+
+  describe("installation Event Lifecycle (Ticket 02)", () => {
+    it("action: 'deleted' transitions installation to disconnected, sets disconnectedAt, disables repository backups, and cancels running jobs", async () => {
+      // 1. Setup active installation with repositories and running + completed jobs
+      const deletedInstId = 99112233;
+      const [inst] = await db
+        .insert(githubInstallations)
+        .values({
+          userId: TEST_USER_ID,
+          installationId: deletedInstId,
+          accountLogin: "deleted-lifecycle-org",
+          accountType: "Organization",
+          avatarUrl: "https://avatars.githubusercontent.com/u/99112233?v=4",
+          targetType: "selected",
+          status: "active",
+        })
+        .onConflictDoUpdate({
+          target: githubInstallations.installationId,
+          set: { status: "active", disconnectedAt: null },
+        })
+        .returning();
+
+      const [repo] = await db
+        .insert(githubRepositories)
+        .values({
+          installationId: inst.id,
+          userId: TEST_USER_ID,
+          githubRepoId: 9911223301,
+          name: "repo-to-disconnect",
+          fullName: "deleted-lifecycle-org/repo-to-disconnect",
+          isPrivate: true,
+          defaultBranch: "main",
+          backupEnabled: true,
+          lastBackupStatus: "running",
+        })
+        .returning();
+
+      // Running job to be cancelled
+      const [runningJob] = await db
+        .insert(backupJobs)
+        .values({
+          repositoryId: repo.id,
+          userId: TEST_USER_ID,
+          status: "running",
+          triggerType: "scheduled",
+          startedAt: new Date(),
+        })
+        .returning();
+
+      // Historical completed job to be preserved
+      const [completedJob] = await db
+        .insert(backupJobs)
+        .values({
+          repositoryId: repo.id,
+          userId: TEST_USER_ID,
+          status: "completed",
+          triggerType: "manual",
+          s3Key: "backups/repo-to-disconnect/historical.bundle",
+          commitSha: "abc1234",
+          completedAt: new Date(),
+        })
+        .returning();
+
+      // 2. Deliver webhook for installation.deleted
+      const payload = {
+        action: "deleted",
+        installation: {
+          id: deletedInstId,
+          account: { login: "deleted-lifecycle-org" },
+        },
+      };
+
+      const body = JSON.stringify(payload);
+      const signature = signWebhookPayload(body, WEBHOOK_SECRET);
+
+      const req = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": signature,
+          "x-github-event": "installation",
+        },
+        body,
+      });
+
+      const res = await webhookHandler(req);
+      expect(res.status).toBe(200);
+      const resData = await res.json();
+      expect(resData.success).toBe(true);
+      expect(resData.status).toBe("disconnected");
+
+      // 3. Verify database state transitions
+      const [updatedInst] = await db
+        .select()
+        .from(githubInstallations)
+        .where(eq(githubInstallations.id, inst.id));
+      expect(updatedInst.status).toBe("disconnected");
+      expect(updatedInst.disconnectedAt).not.toBeNull();
+
+      const [updatedRepo] = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.id, repo.id));
+      expect(updatedRepo.backupEnabled).toBe(false);
+      expect(updatedRepo.lastBackupStatus).toBe("failed");
+
+      const [cancelledJob] = await db
+        .select()
+        .from(backupJobs)
+        .where(eq(backupJobs.id, runningJob.id));
+      expect(cancelledJob.status).toBe("failed");
+      expect(cancelledJob.errorMessage).toBe("Installation disconnected by user");
+
+      const [preservedJob] = await db
+        .select()
+        .from(backupJobs)
+        .where(eq(backupJobs.id, completedJob.id));
+      expect(preservedJob.status).toBe("completed");
+      expect(preservedJob.s3Key).toBe("backups/repo-to-disconnect/historical.bundle");
+    });
+
+    it("action: 'suspend' updates installation status to suspended and disables repository backup schedules", async () => {
+      const suspendInstId = 99112244;
+      const [inst] = await db
+        .insert(githubInstallations)
+        .values({
+          userId: TEST_USER_ID,
+          installationId: suspendInstId,
+          accountLogin: "suspend-lifecycle-org",
+          accountType: "Organization",
+          avatarUrl: "https://avatars.githubusercontent.com/u/99112244?v=4",
+          targetType: "all",
+          status: "active",
+        })
+        .onConflictDoUpdate({
+          target: githubInstallations.installationId,
+          set: { status: "active", disconnectedAt: null },
+        })
+        .returning();
+
+      const [repo] = await db
+        .insert(githubRepositories)
+        .values({
+          installationId: inst.id,
+          userId: TEST_USER_ID,
+          githubRepoId: 9911224401,
+          name: "repo-to-suspend",
+          fullName: "suspend-lifecycle-org/repo-to-suspend",
+          isPrivate: false,
+          defaultBranch: "main",
+          backupEnabled: true,
+        })
+        .returning();
+
+      const payload = {
+        action: "suspend",
+        installation: {
+          id: suspendInstId,
+          account: { login: "suspend-lifecycle-org" },
+        },
+      };
+
+      const body = JSON.stringify(payload);
+      const signature = signWebhookPayload(body, WEBHOOK_SECRET);
+
+      const req = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": signature,
+          "x-github-event": "installation",
+        },
+        body,
+      });
+
+      const res = await webhookHandler(req);
+      expect(res.status).toBe(200);
+      const resData = await res.json();
+      expect(resData.success).toBe(true);
+      expect(resData.status).toBe("suspended");
+
+      // Verify in DB: status is suspended, disconnectedAt is NOT set, backupEnabled is false
+      const [updatedInst] = await db
+        .select()
+        .from(githubInstallations)
+        .where(eq(githubInstallations.id, inst.id));
+      expect(updatedInst.status).toBe("suspended");
+      expect(updatedInst.disconnectedAt).toBeNull();
+
+      const [updatedRepo] = await db
+        .select()
+        .from(githubRepositories)
+        .where(eq(githubRepositories.id, repo.id));
+      expect(updatedRepo.backupEnabled).toBe(false);
+    });
+
+    it("action: 'unsuspend' restores installation status to active", async () => {
+      const unsuspendInstId = 99112255;
+      const [inst] = await db
+        .insert(githubInstallations)
+        .values({
+          userId: TEST_USER_ID,
+          installationId: unsuspendInstId,
+          accountLogin: "unsuspend-lifecycle-org",
+          accountType: "Organization",
+          targetType: "all",
+          status: "suspended",
+        })
+        .onConflictDoUpdate({
+          target: githubInstallations.installationId,
+          set: { status: "suspended" },
+        })
+        .returning();
+
+      const payload = {
+        action: "unsuspend",
+        installation: {
+          id: unsuspendInstId,
+          account: { login: "unsuspend-lifecycle-org" },
+        },
+      };
+
+      const body = JSON.stringify(payload);
+      const signature = signWebhookPayload(body, WEBHOOK_SECRET);
+
+      const req = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": signature,
+          "x-github-event": "installation",
+        },
+        body,
+      });
+
+      const res = await webhookHandler(req);
+      expect(res.status).toBe(200);
+      const resData = await res.json();
+      expect(resData.success).toBe(true);
+      expect(resData.status).toBe("active");
+
+      // Verify in DB: status restored to active
+      const [updatedInst] = await db
+        .select()
+        .from(githubInstallations)
+        .where(eq(githubInstallations.id, inst.id));
+      expect(updatedInst.status).toBe("active");
+    });
+
+    it("gracefully acknowledges already disconnected installations with 200 OK without re-processing", async () => {
+      const alreadyDisconnectedInstId = 99112266;
+      const disconnectedDate = new Date("2026-09-01T12:00:00Z");
+
+      const [inst] = await db
+        .insert(githubInstallations)
+        .values({
+          userId: TEST_USER_ID,
+          installationId: alreadyDisconnectedInstId,
+          accountLogin: "already-disconnected-org",
+          accountType: "Organization",
+          targetType: "all",
+          status: "disconnected",
+          disconnectedAt: disconnectedDate,
+        })
+        .onConflictDoUpdate({
+          target: githubInstallations.installationId,
+          set: { status: "disconnected", disconnectedAt: disconnectedDate },
+        })
+        .returning();
+
+      // Test duplicate deleted event
+      const payloadDeleted = {
+        action: "deleted",
+        installation: {
+          id: alreadyDisconnectedInstId,
+        },
+      };
+      const bodyDeleted = JSON.stringify(payloadDeleted);
+      const sigDeleted = signWebhookPayload(bodyDeleted, WEBHOOK_SECRET);
+
+      const reqDeleted = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sigDeleted,
+          "x-github-event": "installation",
+        },
+        body: bodyDeleted,
+      });
+
+      const resDeleted = await webhookHandler(reqDeleted);
+      expect(resDeleted.status).toBe(200);
+      const dataDeleted = await resDeleted.json();
+      expect(dataDeleted.success).toBe(true);
+      expect(dataDeleted.message).toContain("already disconnected");
+
+      // Test suspend event on already disconnected installation
+      const payloadSuspend = {
+        action: "suspend",
+        installation: {
+          id: alreadyDisconnectedInstId,
+        },
+      };
+      const bodySuspend = JSON.stringify(payloadSuspend);
+      const sigSuspend = signWebhookPayload(bodySuspend, WEBHOOK_SECRET);
+
+      const reqSuspend = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sigSuspend,
+          "x-github-event": "installation",
+        },
+        body: bodySuspend,
+      });
+
+      const resSuspend = await webhookHandler(reqSuspend);
+      expect(resSuspend.status).toBe(200);
+      const dataSuspend = await resSuspend.json();
+      expect(dataSuspend.success).toBe(true);
+      expect(dataSuspend.message).toContain("already disconnected");
+
+      // Test unsuspend event on already disconnected installation (should not resurrect)
+      const payloadUnsuspend = {
+        action: "unsuspend",
+        installation: {
+          id: alreadyDisconnectedInstId,
+        },
+      };
+      const bodyUnsuspend = JSON.stringify(payloadUnsuspend);
+      const sigUnsuspend = signWebhookPayload(bodyUnsuspend, WEBHOOK_SECRET);
+
+      const reqUnsuspend = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sigUnsuspend,
+          "x-github-event": "installation",
+        },
+        body: bodyUnsuspend,
+      });
+
+      const resUnsuspend = await webhookHandler(reqUnsuspend);
+      expect(resUnsuspend.status).toBe(200);
+      const dataUnsuspend = await resUnsuspend.json();
+      expect(dataUnsuspend.success).toBe(true);
+      expect(dataUnsuspend.message).toContain("already disconnected");
+
+      // Verify installation record is still disconnected and preserved
+      const [finalInst] = await db
+        .select()
+        .from(githubInstallations)
+        .where(eq(githubInstallations.id, inst.id));
+      expect(finalInst.status).toBe("disconnected");
+      expect(finalInst.disconnectedAt?.toISOString()).toBe(disconnectedDate.toISOString());
+    });
+
+    it("gracefully acknowledges unrecognized installations on installation events with 200 OK", async () => {
+      const unknownInstId = 9999888877;
+      const payload = {
+        action: "deleted",
+        installation: {
+          id: unknownInstId,
+        },
+      };
+
+      const body = JSON.stringify(payload);
+      const signature = signWebhookPayload(body, WEBHOOK_SECRET);
+
+      const req = new NextRequest("http://localhost:3000/api/github/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": signature,
+          "x-github-event": "installation",
         },
         body,
       });

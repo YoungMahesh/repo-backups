@@ -61,10 +61,7 @@ export async function disconnectInstallation({
     };
   }
 
-  // 1. Cancel in-flight running backup jobs
-  const { cancelledJobsCount } = await cancelInFlightJobsForInstallation(inst.id);
-
-  // 2. Call remote GitHub App deletion
+  // 1. Remote GitHub App deletion (with resilient local fallback)
   let remoteRevoked = false;
   let remoteWarning: string | undefined;
   try {
@@ -78,7 +75,39 @@ export async function disconnectInstallation({
     remoteWarning = msg;
   }
 
-  // 3. Update database records: status = "disconnected", disconnectedAt = now()
+  // 2. Local state transitions: cancel jobs, set status='disconnected', disable backups
+  const { installation: updatedInstallation, disabledRepositoriesCount, cancelledJobsCount } =
+    await disconnectInstallationLocally(inst.id);
+
+  return {
+    status: 200,
+    data: {
+      success: true,
+      installation: updatedInstallation,
+      disabledRepositoriesCount,
+      cancelledJobsCount,
+      remoteRevoked,
+      ...(remoteWarning ? { warning: remoteWarning } : {}),
+    },
+  };
+}
+
+/**
+ * Applies local state transitions for a disconnected installation (used by both UI and webhooks):
+ * 1. Aborts and marks in-flight running backup jobs as failed.
+ * 2. Updates installation record to status = "disconnected" and sets disconnectedAt = now().
+ * 3. Deactivates backup schedules (backupEnabled = false) across all associated repositories.
+ * Historical backups in S3 and database records are strictly preserved.
+ */
+export async function disconnectInstallationLocally(installationDbId: string): Promise<{
+  installation: typeof githubInstallations.$inferSelect;
+  disabledRepositoriesCount: number;
+  cancelledJobsCount: number;
+}> {
+  // 1. Cancel in-flight running backup jobs
+  const { cancelledJobsCount } = await cancelInFlightJobsForInstallation(installationDbId);
+
+  // 2. Update database record: status = "disconnected", disconnectedAt = now()
   const now = new Date();
   const [updatedInstallation] = await db
     .update(githubInstallations)
@@ -87,28 +116,79 @@ export async function disconnectInstallation({
       disconnectedAt: now,
       updatedAt: now,
     })
-    .where(eq(githubInstallations.id, inst.id))
+    .where(eq(githubInstallations.id, installationDbId))
     .returning();
 
-  // 4. Disable backups across all associated repositories
+  // 3. Disable backups across all associated repositories
   const disabledRepos = await db
     .update(githubRepositories)
     .set({
       backupEnabled: false,
       updatedAt: now,
     })
-    .where(eq(githubRepositories.installationId, inst.id))
+    .where(eq(githubRepositories.installationId, installationDbId))
     .returning();
 
   return {
-    status: 200,
-    data: {
-      success: true,
-      installation: updatedInstallation,
-      disabledRepositoriesCount: disabledRepos.length,
-      cancelledJobsCount,
-      remoteRevoked,
-      ...(remoteWarning ? { warning: remoteWarning } : {}),
-    },
+    installation: updatedInstallation,
+    disabledRepositoriesCount: disabledRepos.length,
+    cancelledJobsCount,
   };
 }
+
+/**
+ * Applies local state transitions for a suspended installation:
+ * 1. Updates installation record to status = "suspended".
+ * 2. Deactivates backup schedules (backupEnabled = false) across all associated repositories.
+ */
+export async function suspendInstallationLocally(installationDbId: string): Promise<{
+  installation: typeof githubInstallations.$inferSelect;
+  disabledRepositoriesCount: number;
+}> {
+  const now = new Date();
+  const [updatedInstallation] = await db
+    .update(githubInstallations)
+    .set({
+      status: "suspended",
+      updatedAt: now,
+    })
+    .where(eq(githubInstallations.id, installationDbId))
+    .returning();
+
+  const disabledRepos = await db
+    .update(githubRepositories)
+    .set({
+      backupEnabled: false,
+      updatedAt: now,
+    })
+    .where(eq(githubRepositories.installationId, installationDbId))
+    .returning();
+
+  return {
+    installation: updatedInstallation,
+    disabledRepositoriesCount: disabledRepos.length,
+  };
+}
+
+/**
+ * Restores local state for an unsuspended installation:
+ * Restores installation record status to "active".
+ */
+export async function unsuspendInstallationLocally(installationDbId: string): Promise<{
+  installation: typeof githubInstallations.$inferSelect;
+}> {
+  const now = new Date();
+  const [updatedInstallation] = await db
+    .update(githubInstallations)
+    .set({
+      status: "active",
+      updatedAt: now,
+    })
+    .where(eq(githubInstallations.id, installationDbId))
+    .returning();
+
+  return {
+    installation: updatedInstallation,
+  };
+}
+

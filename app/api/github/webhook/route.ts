@@ -3,6 +3,11 @@ import { eq, and, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { githubInstallations, githubRepositories } from "@/db/schema";
 import { verifyWebhookSignature } from "@/lib/github/crypto";
+import {
+  disconnectInstallationLocally,
+  suspendInstallationLocally,
+  unsuspendInstallationLocally,
+} from "@/lib/github/disconnection";
 
 export async function POST(request: NextRequest) {
   // 1. Read raw body text to preserve exact bytes for HMAC validation
@@ -48,7 +53,110 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. Handle installation_repositories events
+  // 5. Handle installation lifecycle events (Ticket 02)
+  if (
+    event === "installation" ||
+    (payload.installation &&
+      (payload.action === "deleted" ||
+        payload.action === "suspend" ||
+        payload.action === "unsuspend"))
+  ) {
+    const installationIdNumber = payload.installation?.id;
+    if (!installationIdNumber) {
+      return NextResponse.json(
+        { error: "Missing installation information in payload" },
+        { status: 400 },
+      );
+    }
+
+    // Locate linked installation in database
+    const [installation] = await db
+      .select()
+      .from(githubInstallations)
+      .where(eq(githubInstallations.installationId, installationIdNumber))
+      .limit(1);
+
+    if (!installation) {
+      // Gracefully acknowledge unrecognized installations with 200 OK
+      return NextResponse.json(
+        {
+          success: true,
+          message: `Installation ${installationIdNumber} not registered in local database; event skipped`,
+        },
+        { status: 200 },
+      );
+    }
+
+    // Gracefully acknowledge already disconnected installations with 200 OK
+    if (installation.status === "disconnected") {
+      return NextResponse.json(
+        {
+          success: true,
+          message: `Installation ${installationIdNumber} is already disconnected; event skipped`,
+        },
+        { status: 200 },
+      );
+    }
+
+    const action = payload.action;
+
+    if (action === "deleted") {
+      const { disabledRepositoriesCount, cancelledJobsCount } =
+        await disconnectInstallationLocally(installation.id);
+
+      return NextResponse.json(
+        {
+          success: true,
+          action: "deleted",
+          installationId: installationIdNumber,
+          status: "disconnected",
+          disabledRepositoriesCount,
+          cancelledJobsCount,
+        },
+        { status: 200 },
+      );
+    }
+
+    if (action === "suspend") {
+      const { disabledRepositoriesCount } =
+        await suspendInstallationLocally(installation.id);
+
+      return NextResponse.json(
+        {
+          success: true,
+          action: "suspend",
+          installationId: installationIdNumber,
+          status: "suspended",
+          disabledRepositoriesCount,
+        },
+        { status: 200 },
+      );
+    }
+
+    if (action === "unsuspend") {
+      await unsuspendInstallationLocally(installation.id);
+
+      return NextResponse.json(
+        {
+          success: true,
+          action: "unsuspend",
+          installationId: installationIdNumber,
+          status: "active",
+        },
+        { status: 200 },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: `Installation action "${action}" acknowledged`,
+      },
+      { status: 200 },
+    );
+  }
+
+  // 6. Handle installation_repositories events
   if (event === "installation_repositories" || payload.repositories_added || payload.repositories_removed) {
     const installationIdNumber = payload.installation?.id;
     if (!installationIdNumber) {
