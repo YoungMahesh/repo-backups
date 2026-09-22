@@ -7,6 +7,8 @@ const unitTestFiles = [
   'tests/github-setup-banner.test.tsx',
   'tests/github-crypto.test.ts',
   'tests/smoke.test.ts',
+  'tests/landing-page.test.tsx',
+  'tests/routes-and-auth.test.tsx',
 ];
 
 export default defineConfig({

@@ -62,11 +62,17 @@ export function ArchivedBackupsSection({
   const [localRepositories, setLocalRepositories] = useState(archivedRepositories);
 
   useEffect(() => {
-    setLocalInstallations(archivedInstallations);
+    const timer = setTimeout(() => {
+      setLocalInstallations(archivedInstallations);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [archivedInstallations]);
 
   useEffect(() => {
-    setLocalRepositories(archivedRepositories);
+    const timer = setTimeout(() => {
+      setLocalRepositories(archivedRepositories);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [archivedRepositories]);
 
   // Purge state

@@ -30,7 +30,10 @@ export function PurgeArchiveModal({
   // Reset input on open/close
   useEffect(() => {
     if (!isOpen) {
-      setTypedName("");
+      const timer = setTimeout(() => {
+        setTypedName("");
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 

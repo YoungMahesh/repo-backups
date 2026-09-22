@@ -6,7 +6,7 @@ import React from "react";
 import { db } from "@/db";
 import { user, githubInstallations, githubRepositories, backupJobs } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { setMockS3Storage, getMockS3Storage, MockS3Storage } from "@/lib/storage/s3";
+import { setMockS3Storage, MockS3Storage } from "@/lib/storage/s3";
 import { DELETE as deleteInstallationArchiveHandler } from "@/app/api/installations/[id]/archive/route";
 import { DELETE as deleteRepositoryArchiveHandler } from "@/app/api/repositories/[id]/archive/route";
 import { PurgeArchiveModal } from "@/components/github/purge-archive-modal";

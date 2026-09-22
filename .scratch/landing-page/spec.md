@@ -1,6 +1,6 @@
 # Spec: Public Editorial Landing Page, Route Separation, and Interactive Restoration Inspector
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
