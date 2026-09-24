@@ -191,7 +191,7 @@ GITHUB_APP_SLUG="<your_app_slug>"`;
               >
                 GitHub Developer Settings &rarr; New GitHub App
               </a>
-              . Set a distinctive name (e.g. <span className="font-semibold text-ink">Repo Manage</span>)
+              . Set a distinctive name (e.g. <span className="font-semibold text-ink">Repo Backups</span>)
               and specify your Homepage URL.
             </p>
           </div>

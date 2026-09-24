@@ -114,7 +114,7 @@ export async function fetchInstallationDetails(
       headers: {
         Authorization: `Bearer ${jwt}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "repo-manage-backup-app",
+        "User-Agent": "repo-backups-app",
       },
     },
   );
@@ -153,7 +153,7 @@ export async function fetchInstallationToken(
       headers: {
         Authorization: `Bearer ${jwt}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "repo-manage-backup-app",
+        "User-Agent": "repo-backups-app",
       },
     },
   );
@@ -239,7 +239,7 @@ export async function fetchInstallationRepositories(
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "repo-manage-backup-app",
+        "User-Agent": "repo-backups-app",
       },
     },
   );
@@ -291,7 +291,7 @@ export async function deleteInstallation(
       headers: {
         Authorization: `Bearer ${jwt}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "repo-manage-backup-app",
+        "User-Agent": "repo-backups-app",
       },
     },
   );

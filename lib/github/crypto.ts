@@ -18,7 +18,7 @@ function getStateSecret(): string {
   return (
     process.env.GITHUB_APP_STATE_SECRET ||
     process.env.BETTER_AUTH_SECRET ||
-    "repo-manage-github-app-fallback-secret-key-32chars"
+    "repo-backups-github-app-fallback-key-32chars"
   );
 }
 
@@ -96,7 +96,7 @@ export function verifyState(stateToken?: string | null): VerifyStateResult {
 }
 
 export function getGitHubAppSlug(): string {
-  return process.env.GITHUB_APP_SLUG || "repo-manage-app";
+  return process.env.GITHUB_APP_SLUG || "repo-backups-app";
 }
 
 export function getGitHubAppInstallationUrl(state: string): string {

@@ -148,7 +148,7 @@ export default function LoginPage({
             </svg>
           </div>
           <span className="font-serif text-lg font-medium tracking-tight text-ink">
-            Repo Manage
+            Repo Backups
           </span>
         </Link>
 
@@ -166,7 +166,7 @@ export default function LoginPage({
           {/* Header */}
           <div className="text-center space-y-2">
             <h1 className="font-serif text-3xl font-normal tracking-tight text-ink">
-              {mode === "signin" ? "Sign In to Repo Manage" : "Create an Account"}
+              {mode === "signin" ? "Sign In to Repo Backups" : "Create an Account"}
             </h1>
             <p className="font-sans text-xs sm:text-sm text-body">
               {mode === "signin"

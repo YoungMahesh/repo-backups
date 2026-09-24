@@ -78,7 +78,7 @@ export const RestorationShowcase: React.FC = () => {
                     <code>
                       curl -o repository-2026-09-22T040000Z.bundle \
                       <br />
-                      &nbsp;&nbsp;&quot;https://s3.amazonaws.com/repo-manage-vault/...?AWSAccessKeyId=...&quot;
+                      &nbsp;&nbsp;&quot;https://s3.amazonaws.com/repo-backups-vault/...?AWSAccessKeyId=...&quot;
                     </code>
                   </div>
                 </div>

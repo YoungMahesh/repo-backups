@@ -45,7 +45,7 @@ describe("Route Separation & Authentication UI (Spec: Route Separation)", () => 
 
       expect(html).toContain("data-testid=\"login-page\"");
       expect(html).toContain("data-testid=\"signin-form\"");
-      expect(html).toContain("Sign In to Repo Manage");
+      expect(html).toContain("Sign In to Repo Backups");
       expect(html).toContain("id=\"signin-email\"");
       expect(html).toContain("id=\"signin-password\"");
       expect(html).not.toContain("id=\"signup-name\"");

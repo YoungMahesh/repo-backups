@@ -16,7 +16,7 @@ describe("Public Editorial Landing Page & Components (Spec: Landing Page)", () =
     it("renders unauthenticated landing navigation with marketing anchors and login CTAs", () => {
       const html = renderToString(<TopNav isLandingPage={true} user={null} />);
 
-      expect(html).toContain("Repo Manage");
+      expect(html).toContain("Repo Backups");
       expect(html).toContain("Features");
       expect(html).toContain("How It Works");
       expect(html).toContain("Restoration");
@@ -41,7 +41,7 @@ describe("Public Editorial Landing Page & Components (Spec: Landing Page)", () =
       };
       const html = renderToString(<TopNav isLandingPage={true} user={mockUser} />);
 
-      expect(html).toContain("Repo Manage");
+      expect(html).toContain("Repo Backups");
       expect(html).toContain("data-testid=\"landing-dashboard-btn\"");
       expect(html).toContain("Go to Dashboard");
       expect(html).toContain("href=\"/dashboard\"");
@@ -108,7 +108,7 @@ describe("Public Editorial Landing Page & Components (Spec: Landing Page)", () =
     it("renders s3 tab showing S3 storage layout and AES-256 KMS encryption", () => {
       const html = renderToString(<TerminalDemo initialTab="s3" />);
 
-      expect(html).toContain("aws s3 ls s3://repo-manage-backups/installations/");
+      expect(html).toContain("aws s3 ls s3://repo-backups/installations/");
       expect(html).toContain("StorageClass:          STANDARD");
       expect(html).toContain("ServerSideEncryption:  aws:kms (aws/s3)");
       expect(html).toContain("Retention Window active: 10 snapshots retained");
@@ -238,7 +238,7 @@ describe("Public Editorial Landing Page & Components (Spec: Landing Page)", () =
 
       expect(html).toContain("data-testid=\"landing-footer\"");
       expect(html).toContain("bg-surface-dark");
-      expect(html).toContain("Repo Manage");
+      expect(html).toContain("Repo Backups");
       expect(html).toContain("Architecture Pillars");
       expect(html).toContain("Restoration Guide");
       expect(html).toContain("Read-Only Scoping");

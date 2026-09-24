@@ -47,12 +47,12 @@ const TABS: TabConfig[] = [
   {
     id: "s3",
     label: "aws s3 storage",
-    command: "aws s3 ls s3://repo-manage-backups/installations/inst_99182/repositories/core-api/",
+    command: "aws s3 ls s3://repo-backups/installations/inst_99182/repositories/core-api/",
     output: [
       "2026-09-22 04:00:12  44231840  core-api-2026-09-22T040000Z.bundle",
       "  StorageClass:          STANDARD",
       "  ServerSideEncryption:  aws:kms (aws/s3)",
-      "  KmsKeyId:              arn:aws:kms:us-east-1:123456789012:key/repo-manage-vault",
+      "  KmsKeyId:              arn:aws:kms:us-east-1:123456789012:key/repo-backups-vault",
       "  ETag:                  \"8f48b9c2a11b7d5e4932d0e7a1c4b2a9-6\"",
       "",
       "Point-in-time bundle stored with AES-256 server-side encryption.",

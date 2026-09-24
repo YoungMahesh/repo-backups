@@ -94,7 +94,7 @@ describe("Design System UI Components", () => {
   describe("TopNav", () => {
     it("renders top navigation with brand title and radial mark", () => {
       const html = renderToString(<TopNav />);
-      expect(html).toContain("Repo Manage");
+      expect(html).toContain("Repo Backups");
       expect(html).toContain("h-16");
       expect(html).toContain("border-hairline");
     });

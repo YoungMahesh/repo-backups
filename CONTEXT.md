@@ -1,8 +1,13 @@
-# Repository Backup Platform
+# Repo Backups
 
 A platform enabling users to connect their GitHub organizations with read-only permissions to selected repositories, backing up complete git history to S3 storage on a regular or on-demand schedule.
 
 ## Language
+
+**Repo Backups**:
+The platform and service enabling organizations to connect GitHub installations and automate Git bundle backups to sovereign S3 object storage.
+_Avoid_: Repo Manage, repo backup tool, git sync service
+
 
 **Installation**:
 A GitHub App installation granted by an organization owner or account owner, scoped to specific selected repositories with read-only access.

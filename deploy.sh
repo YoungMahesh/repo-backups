@@ -4,6 +4,6 @@ set -e
 cd "$(dirname "$0")"
 
 export TAG=$(git rev-parse HEAD | cut -c1-4)
-echo "Using image: repo-manage:$TAG"
+echo "Using image: repo-backups:$TAG"
 
 exec docker compose up -d

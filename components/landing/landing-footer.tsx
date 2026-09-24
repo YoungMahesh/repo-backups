@@ -69,7 +69,7 @@ export const LandingFooter: React.FC = () => {
                 </svg>
               </div>
               <span className="font-serif text-lg font-normal tracking-tight text-on-dark">
-                Repo Manage
+                Repo Backups
               </span>
             </div>
             <p className="text-on-dark-soft leading-relaxed pr-4">
@@ -163,7 +163,7 @@ export const LandingFooter: React.FC = () => {
         {/* Bottom Notice */}
         <div className="pt-8 border-t border-surface-dark-elevated flex flex-col sm:flex-row items-center justify-between gap-4 text-on-dark-soft">
           <div>
-            &copy; {new Date().getFullYear()} Repo Manage. All rights reserved. Sovereign Git bundle backups.
+            &copy; {new Date().getFullYear()} Repo Backups. All rights reserved. Sovereign Git bundle backups.
           </div>
           <div className="flex items-center gap-6">
             <span>Warm-Canvas Editorial System</span>

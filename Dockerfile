@@ -39,7 +39,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
 # Build standalone Next.js application with compilation cache mount
-RUN --mount=type=cache,id=repo-manage-nextjs,target=/app/.next/cache \
+RUN --mount=type=cache,id=repo-backups-nextjs,target=/app/.next/cache \
     pnpm build
 
 # --- Runner Stage ---

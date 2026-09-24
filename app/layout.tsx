@@ -19,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Repo Manage — GitHub Repository Backups",
+  title: "Repo Backups — GitHub Repository Backups",
   description:
     "Automated Git bundle backups for GitHub organizations.",
 };

@@ -48,7 +48,7 @@ export const TopNav: React.FC<TopNavProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="font-serif text-lg font-medium tracking-tight text-ink">
-              Repo Manage
+              Repo Backups
             </span>
           </div>
         </Link>
