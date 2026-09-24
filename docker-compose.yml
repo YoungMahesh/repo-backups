@@ -16,4 +16,4 @@ services:
 networks:
   repo-backups_net:
     name: repo-backups_net
-    driver: bridge
+    external: true
