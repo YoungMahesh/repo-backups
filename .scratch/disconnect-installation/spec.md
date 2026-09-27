@@ -165,7 +165,7 @@ Tests must verify external behavioral contracts across clean module seams withou
 ## Further Notes
 
 - Architecture decision records:
-  - [0002-github-app-installation-model.md](file:///root/repo-manage/docs/adr/0002-github-app-installation-model.md)
-  - [0006-installation-disconnection-and-backup-retention.md](file:///root/repo-manage/docs/adr/0006-installation-disconnection-and-backup-retention.md)
-  - [0008-user-initiated-archive-purge.md](file:///root/repo-manage/docs/adr/0008-user-initiated-archive-purge.md)
-- Domain glossary and language rules: [CONTEXT.md](file:///root/repo-manage/CONTEXT.md).
+  - [0002-github-app-installation-model.md](../../docs/adr/0002-github-app-installation-model.md)
+  - [0006-installation-disconnection-and-backup-retention.md](../../docs/adr/0006-installation-disconnection-and-backup-retention.md)
+  - [0008-user-initiated-archive-purge.md](../../docs/adr/0008-user-initiated-archive-purge.md)
+- Domain glossary and language rules: [CONTEXT.md](../../CONTEXT.md).
