@@ -75,7 +75,7 @@ A dedicated remote PostgreSQL test architecture utilizing template database clon
 - Vitest configuration defines two workspace projects:
   - **Unit Project**: Matches frontend components (`**/*.test.tsx` except installation disconnection), cryptographic utilities (`github-crypto.test.ts`), and baseline smoke checks (`smoke.test.ts`). Runs in-memory with standard module execution without remote database setup.
   - **Integration Project**: Matches database-dependent suites (route handlers, webhooks, cron, and installation disconnection). Configured with `pool: 'forks'`, `setupFiles` pointing to the worker database harness, and global setup/teardown hooks.
-- Adds `test:unit` script to `package.json` (`dotenvx run -- vitest run --project unit`) for fast offline test execution.
+- Adds `test:unit` script to `package.json` (`vitest run --project unit`) for fast offline test execution.
 
 ### Architectural Decision Record
 
