@@ -9,6 +9,7 @@ const unitTestFiles = [
   'tests/smoke.test.ts',
   'tests/landing-page.test.tsx',
   'tests/routes-and-auth.test.tsx',
+  'tests/export-components.test.tsx',
 ];
 
 export default defineConfig({

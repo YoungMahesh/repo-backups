@@ -45,6 +45,10 @@ export interface MockS3Storage {
     bucket: string;
     key: string;
   }>;
+  getObjectCalls?: Array<{
+    bucket: string;
+    key: string;
+  }>;
   onEnsureBucket?: (bucket: string) => Promise<void>;
   onUpload?: (params: UploadBundleParams) => Promise<UploadBundleResult>;
   onGetSignedUrl?: (params: {
@@ -54,6 +58,7 @@ export interface MockS3Storage {
     downloadFilename?: string;
   }) => Promise<string>;
   onDelete?: (params: { bucket: string; key: string }) => Promise<void>;
+  onGetObject?: (params: { bucket: string; key: string }) => Promise<Buffer>;
 }
 
 let mockStorage: MockS3Storage | null = null;
@@ -290,6 +295,99 @@ export async function uploadBackupBundle(
   };
 }
 
+/**
+ * Uploads an export ZIP archive to S3 with SSE-S3 encryption.
+ */
+export async function uploadExportArchive(
+  params: UploadBundleParams,
+  client: S3Client = getS3Client(),
+): Promise<UploadBundleResult> {
+  if (mockStorage) {
+    mockStorage.uploadCalls.push({
+      bucket: params.bucket,
+      key: params.key,
+      sizeBytes: params.sizeBytes,
+      encryption: "AES256",
+    });
+
+    if (mockStorage.onUpload) {
+      return mockStorage.onUpload(params);
+    }
+
+    return {
+      bucket: params.bucket,
+      key: params.key,
+      sizeBytes: params.sizeBytes ?? 0,
+      serverSideEncryption: "AES256",
+    };
+  }
+
+  let body: Readable | Buffer;
+  let sizeBytes = params.sizeBytes;
+
+  if (params.filePath) {
+    const stat = await fs.promises.stat(params.filePath);
+    sizeBytes = stat.size;
+    body = await fs.promises.readFile(params.filePath);
+  } else if (params.body) {
+    body = params.body;
+  } else {
+    throw new Error("uploadExportArchive requires either filePath or body");
+  }
+
+  const command = new PutObjectCommand({
+    Bucket: params.bucket,
+    Key: params.key,
+    Body: body,
+    ContentLength: sizeBytes,
+    ContentType: "application/zip",
+    ServerSideEncryption: "AES256",
+  });
+
+  const response = await client.send(command);
+
+  return {
+    bucket: params.bucket,
+    key: params.key,
+    sizeBytes: sizeBytes ?? 0,
+    serverSideEncryption: response.ServerSideEncryption || "AES256",
+  };
+}
+
+/**
+ * Downloads an object buffer from S3.
+ */
+export async function downloadObjectBuffer(
+  params: { bucket: string; key: string; client?: S3Client },
+): Promise<Buffer> {
+  if (mockStorage) {
+    if (!mockStorage.getObjectCalls) {
+      mockStorage.getObjectCalls = [];
+    }
+    mockStorage.getObjectCalls.push({ bucket: params.bucket, key: params.key });
+
+    if (mockStorage.onGetObject) {
+      return mockStorage.onGetObject(params);
+    }
+
+    return Buffer.from(`mock bundle content for ${params.key}`);
+  }
+
+  const client = params.client || getS3Client();
+  const command = new GetObjectCommand({
+    Bucket: params.bucket,
+    Key: params.key,
+  });
+
+  const response = await client.send(command);
+  if (!response.Body) {
+    throw new Error(`S3 GetObject returned empty body for ${params.bucket}/${params.key}`);
+  }
+
+  const byteArray = await response.Body.transformToByteArray();
+  return Buffer.from(byteArray);
+}
+
 export interface PresignedDownloadUrlParams {
   bucket: string;
   key: string;
@@ -299,7 +397,7 @@ export interface PresignedDownloadUrlParams {
 }
 
 /**
- * Generates a temporary pre-signed S3 URL for downloading a backup bundle.
+ * Generates a temporary pre-signed S3 URL for downloading a backup bundle or export archive.
  * Defaults to 15 minutes (900 seconds) expiration.
  */
 export async function createPresignedDownloadUrl(
@@ -399,4 +497,3 @@ export async function deleteBackupBundle(
     throw err;
   }
 }
-

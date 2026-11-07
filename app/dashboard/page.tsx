@@ -18,6 +18,11 @@ import {
   ArchivedInstallation,
 } from "@/components/github/archived-backups-section";
 import { GitHubAppSetupBanner } from "@/components/github/setup-banner";
+import { ExportBackupsModal } from "@/components/github/export-backups-modal";
+import {
+  RecentExportsSection,
+  BundleExportItem,
+} from "@/components/github/recent-exports-section";
 import type { GitHubAppConfigStatus } from "@/lib/github/config";
 
 export default function DashboardPage() {
@@ -43,6 +48,11 @@ export default function DashboardPage() {
   const [isDisconnectingId, setIsDisconnectingId] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<GitHubAppConfigStatus | null>(null);
 
+  // Bundle Export states
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [bundleExports, setBundleExports] = useState<BundleExportItem[]>([]);
+  const [isLoadingExports, setIsLoadingExports] = useState(false);
+
   // Session route protection: redirect unauthenticated visitors to /login
   useEffect(() => {
     if (!isSessionPending && !session?.user) {
@@ -59,6 +69,21 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error("Failed to check GitHub setup status:", err);
+    }
+  }, []);
+
+  const loadExports = useCallback(async () => {
+    try {
+      setIsLoadingExports(true);
+      const res = await fetch("/api/exports");
+      if (res.ok) {
+        const data = await res.json();
+        setBundleExports(data.exports || []);
+      }
+    } catch (err) {
+      console.error("Failed to load exports:", err);
+    } finally {
+      setIsLoadingExports(false);
     }
   }, []);
 
@@ -112,7 +137,6 @@ export default function DashboardPage() {
         fetch("/api/installations?status=disconnected"),
         fetch("/api/repositories?status=disconnected"),
       ]);
-
       if (instRes.ok) {
         const instData = await instRes.json();
         setInstallations(instData.installations || []);
@@ -130,12 +154,13 @@ export default function DashboardPage() {
         setArchivedRepositories(archivedRepoData.repositories || []);
       }
       await checkSetupStatus();
+      await loadExports();
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
     } finally {
       setIsLoadingData(false);
     }
-  }, [checkSetupStatus]);
+  }, [checkSetupStatus, loadExports]);
 
   useEffect(() => {
     let ignore = false;
@@ -165,6 +190,9 @@ export default function DashboardPage() {
             const archivedRepoData = await archivedRepoRes.json();
             setArchivedRepositories(archivedRepoData.repositories || []);
           }
+          if (!ignore) {
+            await loadExports();
+          }
         } catch (err) {
           console.error("Failed to load dashboard data:", err);
         } finally {
@@ -176,7 +204,7 @@ export default function DashboardPage() {
     return () => {
       ignore = true;
     };
-  }, [session?.user]);
+  }, [session?.user, loadExports]);
 
   const handleSync = async (installationId: number) => {
     setIsSyncing(true);
@@ -189,10 +217,10 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setErrorMessage(data.error || "Failed to sync repositories from GitHub");
+        setErrorMessage(data.error || "Failed to synchronize installation repositories");
       } else {
         setSuccessMessage(
-          `Successfully synchronized ${data.count} authorized repositories from GitHub.`,
+          `Successfully synchronized repositories for "${data.accountLogin}". (${data.addedCount} added, ${data.removedCount} removed).`,
         );
         await loadDashboardData();
       }
@@ -244,7 +272,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/repositories/${repoId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
+        body: JSON.stringify({ updates }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -338,6 +366,8 @@ export default function DashboardPage() {
     return null;
   }
 
+  const allRepositories = [...repositories, ...archivedRepositories];
+
   return (
     <div
       data-testid="dashboard-page"
@@ -402,35 +432,51 @@ export default function DashboardPage() {
 
           {/* Authenticated Operations Dashboard Content */}
           <div className="space-y-8">
+            {/* Top Action Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4">
+              <div>
+                <h2 className="font-serif text-2xl font-normal text-ink">
+                  Connected Organization
+                </h2>
+                <p className="font-sans text-xs text-muted">
+                  GitHub App installation providing read-only repository access
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsExportModalOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-md border border-hairline bg-surface-card px-4 py-2 text-xs font-medium text-ink hover:bg-surface-cream-strong transition-colors shadow-xs"
+                  data-testid="open-export-modal-btn"
+                >
+                  <svg className="h-3.5 w-3.5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                  Export Backups
+                </button>
+
+                <a
+                  href="/api/github/connect"
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-on-primary hover:bg-primary-active transition-colors shadow-xs"
+                  data-testid="connect-additional-org-btn"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+                  </svg>
+                  Connect Another Organization
+                </a>
+              </div>
+            </div>
+
             {/* Connected Organizations Section */}
             {installations.length > 0 ? (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-serif text-2xl font-normal text-ink">
-                      Connected Organization
-                    </h2>
-                    <p className="font-sans text-xs text-muted">
-                      GitHub App installation providing read-only repository access
-                    </p>
-                  </div>
-                  <a
-                    href="/api/github/connect"
-                    className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-on-primary hover:bg-primary-active transition-colors shadow-xs"
-                    data-testid="connect-additional-org-btn"
-                  >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-                    </svg>
-                    Connect Another Organization
-                  </a>
-                </div>
-
                 <div className="space-y-4">
                   {installations.map((inst) => (
                     <OrganizationCard
@@ -513,6 +559,13 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Recent Bundle Exports Section */}
+            <RecentExportsSection
+              exports={bundleExports}
+              isLoading={isLoadingExports}
+              onRefresh={loadExports}
+            />
+
             {/* Archived Backups Section */}
             <ArchivedBackupsSection
               archivedInstallations={archivedInstallations}
@@ -567,6 +620,19 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {/* Export Backups Modal */}
+      <ExportBackupsModal
+        isOpen={isExportModalOpen}
+        onClose={() => {
+          setIsExportModalOpen(false);
+          loadExports();
+        }}
+        repositories={allRepositories}
+        onExportStarted={() => {
+          loadExports();
+        }}
+      />
     </div>
   );
 }
