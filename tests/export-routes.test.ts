@@ -16,6 +16,7 @@ import { getUserRollingQuotaUsage } from "@/lib/export/quota";
 import { GET as estimateHandler } from "@/app/api/exports/estimate/route";
 import { GET as listExportsHandler, POST as createExportHandler } from "@/app/api/exports/route";
 import { GET as getExportHandler } from "@/app/api/exports/[id]/route";
+import { GET as downloadExportHandler } from "@/app/api/exports/[id]/download/route";
 
 describe("Bundle Export Routes & Engine", () => {
   const TEST_USER = "user-export-integration";
@@ -229,7 +230,7 @@ describe("Bundle Export Routes & Engine", () => {
     await db.delete(bundleExports).where(eq(bundleExports.id, active.id));
   });
 
-  it("GET /api/exports lists recent exports with presigned download URLs", async () => {
+  it("GET /api/exports lists recent exports with application download URLs", async () => {
     const req = new NextRequest("http://localhost:3000/api/exports");
     const res = await listExportsHandler(req);
     expect(res.status).toBe(200);
@@ -263,7 +264,31 @@ describe("Bundle Export Routes & Engine", () => {
     const body = await res.json();
     expect(body.export.id).toBe(exp.id);
     expect(body.export.status).toBe("completed");
-    expect(body.export.downloadUrl).toBeDefined();
+    expect(body.export.downloadUrl).toBe(`/api/exports/${exp.id}/download`);
+  });
+
+  it("GET /api/exports/[id]/download streams the export zip archive with proper headers", async () => {
+    const [exp] = await db
+      .insert(bundleExports)
+      .values({
+        userId: TEST_USER,
+        status: "completed",
+        s3Bucket: "repo-backups",
+        s3Key: `exports/${TEST_USER}/stream-test/archive.zip`,
+        totalSizeBytes: 12345,
+        expiresAt: new Date(Date.now() + 86400000),
+      })
+      .returning();
+
+    const req = new NextRequest(`http://localhost:3000/api/exports/${exp.id}/download`);
+    const res = await downloadExportHandler(req, {
+      params: Promise.resolve({ id: exp.id }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("content-disposition")).toContain(`attachment; filename="repo-backups-export-${exp.id.slice(0, 8)}.zip"`);
+    expect(Number(res.headers.get("content-length"))).toBeGreaterThan(0);
   });
 
   it("calculates rolling 24-hour quota and excludes failed or canceled exports", async () => {

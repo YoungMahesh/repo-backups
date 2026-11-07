@@ -7,7 +7,7 @@ import { getUserRollingQuotaUsage } from "@/lib/export/quota";
 import { getExportCandidates } from "@/lib/export/selection";
 import { executeBundleExport } from "@/lib/export/engine";
 import { formatBytes } from "@/lib/export/manifest";
-import { createPresignedDownloadUrl, getDefaultBackupBucket } from "@/lib/storage/s3";
+import { getDefaultBackupBucket } from "@/lib/storage/s3";
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -45,16 +45,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (exp.status === "completed" && !isExpired && exp.s3Bucket && exp.s3Key) {
-        try {
-          downloadUrl = await createPresignedDownloadUrl({
-            bucket: exp.s3Bucket,
-            key: exp.s3Key,
-            expiresInSeconds: 3600, // 1 hour link
-            downloadFilename: `repo-backups-export-${exp.id.slice(0, 8)}.zip`,
-          });
-        } catch {
-          downloadUrl = null;
-        }
+        downloadUrl = `/api/exports/${exp.id}/download`;
       }
 
       return {
@@ -161,7 +152,6 @@ export async function POST(request: NextRequest) {
     .returning();
 
   // 5. Trigger background asynchronous packaging
-  // Note: We do not await this so API returns immediately to client
   void executeBundleExport({ exportId: createdExport.id }).catch((err) => {
     console.error(`[BundleExport] Background execution error for ${createdExport.id}:`, err);
   });

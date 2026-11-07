@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { bundleExports } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { createPresignedDownloadUrl } from "@/lib/storage/s3";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -46,16 +45,7 @@ export async function GET(request: NextRequest, context: RouteParams) {
   }
 
   if (exportRecord.status === "completed" && !isExpired && exportRecord.s3Bucket && exportRecord.s3Key) {
-    try {
-      downloadUrl = await createPresignedDownloadUrl({
-        bucket: exportRecord.s3Bucket,
-        key: exportRecord.s3Key,
-        expiresInSeconds: 3600,
-        downloadFilename: `repo-backups-export-${exportRecord.id.slice(0, 8)}.zip`,
-      });
-    } catch {
-      downloadUrl = null;
-    }
+    downloadUrl = `/api/exports/${exportRecord.id}/download`;
   }
 
   return NextResponse.json({

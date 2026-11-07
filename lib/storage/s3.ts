@@ -497,3 +497,52 @@ export async function deleteBackupBundle(
     throw err;
   }
 }
+
+/**
+ * Retrieves an S3 object as a readable stream (Web ReadableStream or Node Readable),
+ * supporting mock storage in testing environments.
+ */
+export async function getObjectStream(params: {
+  bucket: string;
+  key: string;
+  client?: S3Client;
+}): Promise<{ stream: ReadableStream | Readable; contentLength?: number }> {
+  if (mockStorage) {
+    if (!mockStorage.getObjectCalls) {
+      mockStorage.getObjectCalls = [];
+    }
+    mockStorage.getObjectCalls.push({ bucket: params.bucket, key: params.key });
+
+    let buf: Uint8Array = Buffer.from("mock bundle binary content");
+    if (mockStorage.onGetObject) {
+      buf = await mockStorage.onGetObject(params);
+    }
+
+    const webStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(buf);
+        controller.close();
+      },
+    });
+
+    return { stream: webStream, contentLength: buf.length };
+  }
+
+  const client = params.client || getS3Client();
+  const command = new GetObjectCommand({
+    Bucket: params.bucket,
+    Key: params.key,
+  });
+
+  const response = await client.send(command);
+  if (!response.Body) {
+    throw new Error(`S3 GetObject returned empty body for ${params.bucket}/${params.key}`);
+  }
+
+  const webStream =
+    typeof (response.Body as { transformToWebStream?: () => ReadableStream }).transformToWebStream === "function"
+      ? (response.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream()
+      : (response.Body as unknown as ReadableStream);
+
+  return { stream: webStream, contentLength: response.ContentLength };
+}
