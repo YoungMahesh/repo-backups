@@ -69,7 +69,7 @@ A complete installation lifecycle adhering to the platform's warm-canvas editori
 - **Two-Stage Lifecycle**: The platform establishes an explicit two-stage lifecycle for account offboarding:
   - **Stage 1 (Disconnection)**: Non-destructive revocation. Sever GitHub authorization and cancel scheduled runs while strictly preserving all historical Backup Bundles in S3 object storage and maintaining database metadata (ADR-0006).
   - **Stage 2 (Archive Purge)**: Destructive, permanent storage erasure. User-initiated deletion of all preserved Git `.bundle` files from S3 and cascade-deletion of PostgreSQL database records (ADR-0008).
-- **Ubiquitous Language**: The domain term is **Archive Purge** (verb: **Purge**). We avoid ambiguous terms like "remove archive", "wipe backups", or "clear history" (CONTEXT.md).
+- **Ubiquitous Language**: The domain term is **Archive Purge** (verb: **Purge**). We avoid ambiguous terms like "remove archive", "wipe backups", or "clear history" (GLOSSARY.md).
 - **Eligibility Barrier**: Archive Purge is strictly restricted to disconnected installations and their repositories. Active installations must be disconnected first before any archive can be purged.
 
 ### Storage & Database Deletion Semantics
@@ -168,4 +168,4 @@ Tests must verify external behavioral contracts across clean module seams withou
   - [0002-github-app-installation-model.md](../../docs/adr/0002-github-app-installation-model.md)
   - [0006-installation-disconnection-and-backup-retention.md](../../docs/adr/0006-installation-disconnection-and-backup-retention.md)
   - [0008-user-initiated-archive-purge.md](../../docs/adr/0008-user-initiated-archive-purge.md)
-- Domain glossary and language rules: [CONTEXT.md](../../CONTEXT.md).
+- Domain glossary and language rules: [GLOSSARY.md](../../GLOSSARY.md).

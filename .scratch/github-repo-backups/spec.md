@@ -131,4 +131,4 @@ Once connected, the platform inventories available repositories and allows users
 
 - All database schema updates will be generated via `pnpm run db-generate` and applied via `pnpm run db-migrate` in adherence to project rules.
 - Design tokens and component styling will strictly adhere to `DESIGN.md` and ADR 0001.
-- All domain terminology aligns with `CONTEXT.md`.
+- All domain terminology aligns with `GLOSSARY.md`.
