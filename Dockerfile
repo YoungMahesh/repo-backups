@@ -46,6 +46,9 @@ RUN --mount=type=cache,id=repo-backups-nextjs,target=/app/.next/cache \
 FROM node:24.21.0-alpine AS runner
 WORKDIR /app
 
+# Install git and ca-certificates required for backup engine clones and bundles
+RUN apk add --no-cache git ca-certificates
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000

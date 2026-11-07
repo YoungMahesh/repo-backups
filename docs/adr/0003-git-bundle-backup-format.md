@@ -10,5 +10,8 @@ We decided to produce complete Git bundles (`.bundle`) via `git bundle create --
 
 ## Consequences
 - The backup worker performs a clone using short-lived installation tokens, generates a Git bundle, and streams it to S3 storage.
+- Production container images must include the system `git` CLI and `ca-certificates` in the runner stage to support clone operations over HTTPS and bundle creation.
+- Subprocesses execute non-interactively with `GIT_TERMINAL_PROMPT=0` and `GIT_OPTIONAL_LOCKS=0` to prevent hanging on authentication errors or repository locks.
+- Temporary scratch space for bare clones and bundle generation uses `os.tmpdir()` by default, with optional `BACKUP_TEMP_DIR` configuration for dedicated storage volume mounts.
 - Restoring a backup requires standard git tooling rather than unzipping source files.
 - Backup storage requirements scale with full git repository history size rather than working tree size alone.

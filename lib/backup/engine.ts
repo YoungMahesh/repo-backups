@@ -69,10 +69,13 @@ export async function executeGitCloneAndBundle(
   attempt: number = 0,
   signal?: AbortSignal,
 ): Promise<GitBundleResult> {
+  const baseTempDir = process.env.BACKUP_TEMP_DIR || os.tmpdir();
+  await fs.promises.mkdir(baseTempDir, { recursive: true });
+
   if (mockGitRunner?.runBundle) {
     const mockResult = await mockGitRunner.runBundle(repoFullName, token, attempt);
     const tempDir = await fs.promises.mkdtemp(
-      path.join(os.tmpdir(), "mock-bundle-"),
+      path.join(baseTempDir, "mock-bundle-"),
     );
     const bundlePath = path.join(tempDir, "backup.bundle");
     const content = mockResult.bundleContent || Buffer.from("mock-git-bundle-content");
@@ -87,7 +90,7 @@ export async function executeGitCloneAndBundle(
     };
   }
 
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "repo-backup-"));
+  const tempDir = await fs.promises.mkdtemp(path.join(baseTempDir, "repo-backup-"));
   const mirrorDir = path.join(tempDir, "mirror.git");
   const bundlePath = path.join(tempDir, "backup.bundle");
 
@@ -100,10 +103,17 @@ export async function executeGitCloneAndBundle(
       ? `https://x-access-token:${token}@github.com/${repoFullName}.git`
       : `https://github.com/${repoFullName}.git`;
 
+    const gitEnv = {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_OPTIONAL_LOCKS: "0",
+    };
+
     // 1. Bare mirror clone using installation token
     await execFileAsync("git", ["clone", "--mirror", authUrl, mirrorDir], {
       timeout: 180000,
       signal,
+      env: gitEnv,
     });
 
     // 2. Standalone Git bundle with --all preserving full git history
@@ -111,13 +121,14 @@ export async function executeGitCloneAndBundle(
       cwd: mirrorDir,
       timeout: 180000,
       signal,
+      env: gitEnv,
     });
 
     // 3. Capture latest commit SHA
     const { stdout: headSha } = await execFileAsync(
       "git",
       ["rev-parse", "HEAD"],
-      { cwd: mirrorDir, signal },
+      { cwd: mirrorDir, signal, env: gitEnv },
     );
     const commitSha = headSha.trim();
 
