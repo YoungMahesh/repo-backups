@@ -8,7 +8,6 @@ A platform enabling users to connect their GitHub organizations with read-only p
 The platform and service enabling organizations to connect GitHub installations and automate Git bundle backups to sovereign S3 object storage.
 _Avoid_: Repo Manage, repo backup tool, git sync service
 
-
 **Installation**:
 A GitHub App installation granted by an organization owner or account owner, scoped to specific selected repositories with read-only access.
 _Avoid_: Integration, connection, org link
@@ -48,3 +47,7 @@ _Avoid_: Delete org, remove connection
 **Archive Purge**:
 The intentional, permanent deletion of historical Backup Bundles from S3 object storage and cascading removal of associated database records for a Disconnected Installation or Repository.
 _Avoid_: Remove archive, wipe backups, clear history
+
+**Bundle Export**:
+An on-demand bulk archive packaging selected Backup Bundles across chosen Repositories and date ranges into a downloadable compressed ZIP file.
+_Avoid_: Account takeout, user data dump, code snapshot zip
